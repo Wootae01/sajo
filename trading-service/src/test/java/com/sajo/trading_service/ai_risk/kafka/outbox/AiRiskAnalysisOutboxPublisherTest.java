@@ -1,8 +1,10 @@
 package com.sajo.trading_service.ai_risk.kafka.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sajo.trading_service.ai_risk.domain.AiAnalysisFailureType;
 import com.sajo.trading_service.ai_risk.kafka.dto.AiRiskAnalysisRequestedEvent;
 import com.sajo.trading_service.ai_risk.kafka.producer.AiRiskAnalysisEventProducer;
+import com.sajo.trading_service.ai_risk.service.command.AiRiskAnalysisResultService;
 import com.sajo.trading_service.outbox.domain.OutboxEvent;
 import com.sajo.trading_service.outbox.domain.OutboxStatus;
 import com.sajo.trading_service.outbox.repository.OutboxEventRepository;
@@ -36,6 +38,9 @@ class AiRiskAnalysisOutboxPublisherTest {
     private OutboxEventStatusService outboxEventStatusService;
 
     @Mock
+    private AiRiskAnalysisResultService aiRiskAnalysisResultService;
+
+    @Mock
     private ObjectMapper objectMapper;
 
     private AiRiskAnalysisOutboxPublisher publisher;
@@ -61,7 +66,8 @@ class AiRiskAnalysisOutboxPublisherTest {
                 outboxEventRepository,
                 eventProducer,
                 objectMapper,
-                outboxEventStatusService
+                outboxEventStatusService,
+                aiRiskAnalysisResultService
         );
     }
 
@@ -100,7 +106,7 @@ class AiRiskAnalysisOutboxPublisherTest {
     }
 
     @Test
-    void Kafka_발행에_실패하면_Outbox_실패를_처리한다() throws Exception {
+    void Kafka_발행에_실패했지만_Outbox가_PENDING이면_AI_분석은_실패시키지_않는다() throws Exception {
         givenPendingEvent();
 
         when(outboxEventStatusService.claimForPublish(eventId))
@@ -125,6 +131,8 @@ class AiRiskAnalysisOutboxPublisherTest {
 
         verify(outboxEventStatusService, never())
                 .markPublished(any());
+
+        verifyNoInteractions(aiRiskAnalysisResultService);
     }
 
     @Test
@@ -221,5 +229,51 @@ class AiRiskAnalysisOutboxPublisherTest {
 
         verify(outboxEventStatusService, never())
                 .handlePublishFailure(failedEventId);
+    }
+
+    @Test
+    void Kafka_발행이_최종_실패하면_AI_분석도_FAILED로_변경한다()
+            throws Exception {
+
+        UUID analysisId = UUID.randomUUID();
+
+        givenPendingEvent();
+
+        when(outboxEventStatusService.claimForPublish(eventId))
+                .thenReturn(true);
+
+        AiRiskAnalysisRequestedEvent.Payload payload =
+                mock(AiRiskAnalysisRequestedEvent.Payload.class);
+
+        when(event.payload()).thenReturn(payload);
+        when(payload.analysisId()).thenReturn(analysisId);
+
+        when(objectMapper.treeToValue(
+                outboxEvent.getEventBody(),
+                AiRiskAnalysisRequestedEvent.class
+        )).thenReturn(event);
+
+        doThrow(new IllegalStateException("Kafka publish failed"))
+                .when(eventProducer)
+                .publish(event);
+
+        outboxEvent.markFailed();
+
+        when(outboxEventStatusService.handlePublishFailure(eventId))
+                .thenReturn(outboxEvent);
+
+        publisher.publishPendingEvents();
+
+        verify(outboxEventStatusService)
+                .handlePublishFailure(eventId);
+
+        verify(aiRiskAnalysisResultService).fail(
+                analysisId,
+                AiAnalysisFailureType.INTERNAL_ERROR,
+                "AI 위험 분석 이벤트 발행에 최종 실패했습니다."
+        );
+
+        verify(outboxEventStatusService, never())
+                .markPublished(any());
     }
 }

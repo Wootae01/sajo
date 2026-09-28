@@ -1,8 +1,10 @@
 package com.sajo.trading_service.ai_risk.kafka.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sajo.trading_service.ai_risk.domain.AiAnalysisFailureType;
 import com.sajo.trading_service.ai_risk.kafka.dto.AiRiskAnalysisRequestedEvent;
 import com.sajo.trading_service.ai_risk.kafka.producer.AiRiskAnalysisEventProducer;
+import com.sajo.trading_service.ai_risk.service.command.AiRiskAnalysisResultService;
 import com.sajo.trading_service.outbox.domain.OutboxEvent;
 import com.sajo.trading_service.outbox.domain.OutboxStatus;
 import com.sajo.trading_service.outbox.repository.OutboxEventRepository;
@@ -26,6 +28,42 @@ public class AiRiskAnalysisOutboxPublisher {
     private final AiRiskAnalysisEventProducer eventProducer;
     private final ObjectMapper objectMapper;
     private final OutboxEventStatusService outboxEventStatusService;
+    private final AiRiskAnalysisResultService aiRiskAnalysisResultService;
+
+    private void handleKafkaPublishFailure(
+            UUID eventId,
+            AiRiskAnalysisRequestedEvent event,
+            Exception exception
+    ) {
+        OutboxEvent outboxEvent =
+                outboxEventStatusService.handlePublishFailure(eventId);
+
+        if (outboxEvent.getStatus() == OutboxStatus.FAILED) {
+            UUID analysisId = event.payload().analysisId();
+
+            aiRiskAnalysisResultService.fail(
+                    analysisId,
+                    AiAnalysisFailureType.INTERNAL_ERROR,
+                    "AI 위험 분석 이벤트 발행에 최종 실패했습니다."
+            );
+
+            log.error(
+                    "AI 위험 분석 Outbox 이벤트 최종 발행 실패. eventId={}, analysisId={}, retryCount={}",
+                    eventId,
+                    analysisId,
+                    outboxEvent.getRetryCount(),
+                    exception
+            );
+            return;
+        }
+
+        log.warn(
+                "AI 위험 분석 Outbox 이벤트 발행 실패. eventId={}, retryCount={}",
+                eventId,
+                outboxEvent.getRetryCount(),
+                exception
+        );
+    }
 
     public void publishPendingEvents(){
         List<OutboxEvent> events = outboxEventRepository.findByStatusAndEventTypeOrderByCreatedAtAsc(
@@ -93,7 +131,7 @@ public class AiRiskAnalysisOutboxPublisher {
         try {
             eventProducer.publish(event);
         } catch (Exception exception) {
-            handlePublishFailure(outboxEvent.getId(), exception);
+            handleKafkaPublishFailure(outboxEvent.getId(), event, exception);
             return;
         }
 
