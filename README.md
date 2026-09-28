@@ -1,4 +1,11 @@
-# 📈 4JO
+<h1>
+  <img src="docs/4jo-logo-green.svg" width="48" align="center" />
+  4JO
+</h1>
+
+<p align="center">
+  <img src="docs/banner.jpg" width="100%"/>
+</p>
 
 ### 투자 전략 위험 분석 및 자동매매 서비스
 
@@ -72,11 +79,11 @@
 
 | 🔐 회원 · 계좌 | 📈 시세 | 🎯 전략 | 📊 백테스트 |
 |:---:|:---:|:---:|:---:|
-| ✅ 회원가입 / 로그인<br>✅ JWT 인증<br>✅ Refresh Token 관리<br>✅ KIS 계좌 연동<br>✅ 잔고 / 보유종목 조회 | ✅ 종목 검색<br>✅ 현재가 조회<br>✅ 투자지표 조회<br>✅ WebSocket 실시간 시세<br>✅ Redis 시세 캐싱 | ✅ 투자 전략 CRUD<br>✅ 매수 / 매도 조건 설정<br>✅ PER · PBR · ROE 조건<br>✅ 목표수익률 / 손절률 설정<br>✅ 전략 활성화 / 비활성화 | ✅ 기간 기반 백테스트<br>✅ 총 수익률<br>✅ MDD<br>✅ 승률<br>✅ 최대 연속 손실 |
+| 회원가입 / 로그인<br>JWT 인증<br>Refresh Token 관리<br>KIS 계좌 연동<br>잔고 / 보유종목 조회 | 종목 검색<br>현재가 조회<br>투자지표 조회<br>WebSocket 실시간 시세<br>Redis 시세 캐싱 | 투자 전략 CRUD<br>매수 / 매도 조건 설정<br>PER · PBR · ROE 조건<br>목표수익률 / 손절률 설정<br>전략 활성화 / 비활성화 | 기간 기반 백테스트<br>총 수익률<br>MDD<br>승률<br>최대 연속 손실 |
 
 | 🤖 AI 위험 분석 | ⚡ 자동매매 | 💰 주문 · 체결 | 🛠 운영 · 지원 |
 |:---:|:---:|:---:|:---:|
-| ✅ AI 위험 등급<br>✅ 주요 위험 요소<br>✅ 판단 근거<br>✅ 개선 고려사항<br>✅ Prompt Version / Audit | ✅ 실시간 전략 평가<br>✅ Kafka Signal 처리<br>✅ 중복 Signal 방지<br>✅ 사용자 승인 전략만 실행<br>✅ 주문 직전 검증 | ✅ KIS 모의 주문<br>✅ 주문 / 체결 조회<br>✅ 주문 상태 관리<br>✅ Timeout 상태 관리<br>✅ Reconciliation | ✅ 서비스 / 호스트 모니터링<br>✅ 메트릭 · 로그 수집<br>✅ 분산 트레이싱<br>✅ Slack 장애 알림<br>✅ RAG 고객 응대 |
+| AI 위험 등급<br>주요 위험 요소<br>판단 근거<br>개선 고려사항<br>Prompt Version / Audit | 실시간 전략 평가<br>Kafka Signal 처리<br>중복 Signal 방지<br>사용자 승인 전략만 실행<br>주문 직전 검증 | KIS 모의 주문<br>주문 / 체결 조회<br>주문 상태 관리<br>Timeout 상태 관리<br>Reconciliation | 서비스 / 호스트 모니터링<br>메트릭 · 로그 수집<br>분산 트레이싱<br>Slack 장애 알림<br>RAG 고객 응대 |
 
 <br>
 
@@ -297,44 +304,119 @@ cd sajo
 프로젝트 실행에 필요한 환경 변수를 설정합니다.
 
 ```env
-# Spring
-SPRING_PROFILES_ACTIVE=
+# =========================
+# Database
+# =========================
 
-# PostgreSQL
-DB_URL=
-DB_USERNAME=
-DB_PASSWORD=
+DB_PASSWORD=                         # PostgreSQL 접속 비밀번호
+MONGO_PASSWORD=                      # MongoDB 접속 비밀번호
 
-# MongoDB
-MONGODB_URI=
-
+# =========================
 # Redis
-REDIS_HOST=
-REDIS_PORT=
+# =========================
 
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=
+REDIS_PASSWORD=                      # Redis 접속 비밀번호
 
-# JWT
-JWT_SECRET=
+# =========================
+# Authentication & Security
+# =========================
 
-# KIS Open API
-KIS_APP_KEY=
-KIS_APP_SECRET=
+JWT_SECRET=                          # 로그인 토큰 발급/검증 (32자 이상 권장)
+INTERNAL_API_SECRET=                 # 서비스 간 내부 API 인증
 
+ACCOUNT_ENCRYPTION_KEY=              # 계좌정보 암호화
+ACCOUNT_ENCRYPTION_SALT=             # 계좌정보 암호화 Salt
+ACCOUNT_HASH_KEY=                    # 계좌정보 해시
+
+# =========================
+# Config Server
+# =========================
+
+GITHUB_USERNAME=                     # config-repo 접근 (로컬용)
+GITHUB_TOKEN=                        # config-repo 접근 (로컬용)
+ENCRYPT_KEY=                         # Config Server 값 암호화
+
+# =========================
 # OpenAI
-OPENAI_API_KEY=
+# =========================
+
+OPENAI_API_KEY=                      # OpenAI API 키
+
+# =========================
+# RAG Support Chat
+# =========================
+
+SUPPORT_RAG_ENABLED=false            # RAG 챗봇 on/off
+SPRING_AI_CHAT_MODEL=none            # RAG Chat Model 활성화
+SPRING_AI_EMBEDDING_MODEL=none       # RAG Embedding Model 활성화
+SUPPORT_RAG_CHAT_MODEL_NAME=gpt-4o-mini # RAG 응답 모델
+
+# =========================
+# Market Scheduler
+# =========================
+
+MARKET_SCHEDULER_ENABLED=false       # 시세 스케줄러 on/off
+MARKET_SCHEDULER_SYSTEM_USER_ID=     # 스케줄러 구동용 시스템 계정
+
+MARKET_STOCK_MASTER_SYNC_ENABLED=false # 종목 마스터 동기화 on/off
+
+# 평일 16:10 일별 시세 수집
+MARKET_SCHEDULER_DAILY_PRICE_CRON="0 10 16 * * MON-FRI"
+
+# 투자지표 수집 스케줄러
+MARKET_INDICATOR_SCHEDULER_ENABLED=false
+MARKET_INDICATOR_SCHEDULER_CRON="0 20 16 * * MON-FRI"
+
+# KIS API Rate Limit 방지를 위한 호출 간격
+MARKET_SCHEDULER_KIS_REQUEST_INTERVAL=1100ms
+
+# 스케줄러 대상 종목 코드 (쉼표로 구분)
+# 예: 삼성전자(005930), 현대차(005380), 카카오(035720)
+MARKET_SCHEDULER_TARGET_STOCK_CODES=005930,005380,035720
+
+# =========================
+# KIS WebSocket
+# =========================
+
+MARKET_WEBSOCKET_ENABLED=false       # 실시간 시세 on/off
+MARKET_WEBSOCKET_SYSTEM_USER_ID=     # WebSocket 구동용 시스템 계정
+
+# 실시간 구독 대상 종목 코드 (쉼표로 구분)
+# 예: 삼성전자(005930), SK하이닉스(000660)
+MARKET_WEBSOCKET_TARGET_STOCK_CODES=005930,000660
+
+# =========================
+# Monitoring
+# =========================
+
+GRAFANA_ADMIN_USER=admin             # Grafana 관리자 계정
+GRAFANA_ADMIN_PASSWORD=              # Grafana 관리자 비밀번호
+
+SLACK_WEBHOOK_URL=                   # 장애/알림 Slack 발송
 ```
 
-> 실제 서비스별 환경 변수는 각 서비스 설정을 참고하세요.
+> 실제 Secret 값은 저장소에 커밋하지 않으며, 로컬 `.env` 또는 배포 환경의 Secret으로 관리합니다.
 
-### 3. Run
+### 3. GitHub Actions Secrets
+
+배포 및 자동화 Workflow에서 사용하는 값은 애플리케이션 `.env`와 별도로 GitHub Actions Secrets에서 관리합니다.
+
+| Secret | 용도 |
+|---|---|
+| `EC2_USER` | 배포 서버 SSH 계정 |
+| `EC2_HOST` | 배포 서버 주소 |
+| `EC2_SSH_KEY` | 배포 서버 SSH Private Key |
+| `CONFIG_REPO_GITHUB_USERNAME` | Config Server의 `sajo-config-repo` 접근 계정 |
+| `CONFIG_REPO_GITHUB_TOKEN` | Config Server의 `sajo-config-repo` 접근 토큰 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | PR 자동 코드 리뷰 Workflow 인증 |
+
+### 4. Run
 
 ```bash
 docker compose up -d
 ```
 
-### 4. Stop
+### 5. Stop
 
 ```bash
 docker compose down
