@@ -1,6 +1,6 @@
 <h1>
-  <img src="docs/4jo-logo-green.svg" width="48" align="center" />
-  4JO
+  <img src="docs/4jo-logo-green.svg" width="80" alt="4JO Logo" valign="middle">
+  &nbsp;4JO
 </h1>
 
 <p align="center">
