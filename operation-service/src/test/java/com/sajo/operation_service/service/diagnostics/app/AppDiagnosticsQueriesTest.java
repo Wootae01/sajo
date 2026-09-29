@@ -63,4 +63,39 @@ class AppDiagnosticsQueriesTest {
                 .contains("jvm_gc_pause_seconds_sum{application=\"trading-service\"}")
                 .contains("sum by (application, instance)");
     }
+
+    @Test
+    @DisplayName("outboundAvgLatency 쿼리는 호출 대상별 평균을 구하고 Eureka 호출과 트래픽 없는 대상은 제외한다")
+    void outboundAvgLatency_groupsByClientNameAndExcludesDiscovery() {
+        String query = AppDiagnosticsQueries.outboundAvgLatency("trading-service");
+
+        assertThat(query)
+                .contains("http_client_requests_seconds_sum{application=\"trading-service\", client_name!=\"discovery-service\"}")
+                .contains("http_client_requests_seconds_count{application=\"trading-service\", client_name!=\"discovery-service\"}")
+                .contains("sum by (client_name)")
+                .contains("> 0)");
+    }
+
+    @Test
+    @DisplayName("outboundMaxLatency 쿼리는 호출 대상별 5분 최댓값을 구한다")
+    void outboundMaxLatency_usesMaxOverTimeByClientName() {
+        String query = AppDiagnosticsQueries.outboundMaxLatency("trading-service");
+
+        assertThat(query)
+                .contains("max by (client_name)")
+                .contains("max_over_time(http_client_requests_seconds_max{application=\"trading-service\", client_name!=\"discovery-service\"}[5m])");
+    }
+
+    @Test
+    @DisplayName("outboundFailureRate 쿼리는 5xx와 무응답을 실패로 보고, 실패 0건인 대상도 0으로 채운다")
+    void outboundFailureRate_countsServerAndNoResponseErrorsAndFillsZero() {
+        String query = AppDiagnosticsQueries.outboundFailureRate("trading-service");
+
+        assertThat(query)
+                .contains("status=~\"5..|IO_ERROR|CLIENT_ERROR\"")
+                .contains("or")
+                .contains("* 0")
+                .contains("sum by (client_name)")
+                .contains("client_name!=\"discovery-service\"");
+    }
 }

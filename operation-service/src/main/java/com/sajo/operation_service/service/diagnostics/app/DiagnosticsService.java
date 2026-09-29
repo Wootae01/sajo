@@ -24,6 +24,9 @@ public class DiagnosticsService {
         metrics.put("Heap(Old Gen) 사용률(0~1)", prometheusClient.query(AppDiagnosticsQueries.heapUsage(application), time));
         metrics.put("HikariCP 커넥션 대기(pending)", prometheusClient.query(AppDiagnosticsQueries.hikariPoolPending(application), time));
         metrics.put("GC pause 시간 비율(0~1)", prometheusClient.query(AppDiagnosticsQueries.gcOverhead(application), time));
+        metrics.put("아웃바운드 호출 대상별 평균 응답시간(초)", prometheusClient.query(AppDiagnosticsQueries.outboundAvgLatency(application), time));
+        metrics.put("아웃바운드 호출 대상별 최대 응답시간(초)", prometheusClient.query(AppDiagnosticsQueries.outboundMaxLatency(application), time));
+        metrics.put("아웃바운드 호출 대상별 실패율(0~1, 5xx/무응답)", prometheusClient.query(AppDiagnosticsQueries.outboundFailureRate(application), time));
 
         return metrics;
     }
