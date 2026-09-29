@@ -51,4 +51,43 @@ final class AppDiagnosticsQueries {
                 )
                 """.formatted(application);
     }
+
+    // 아웃바운드 호출(Feign/RestClient) 대상별 평균 응답시간 - client 쪽은 히스토그램 bucket이 없어서
+    // p99 대신 평균을 쓴다. client_name은 Feign이면 @FeignClient name, RestClient면 호스트명이라
+    // 같은 KIS라도 서비스/환경마다 값이 달라서 특정 이름으로 필터링하지 않고 대상별로 전부 묶는다
+    static String outboundAvgLatency(String application) {
+        return """
+                sum by (client_name) (rate(http_client_requests_seconds_sum{%1$s}[5m]))
+                /
+                (sum by (client_name) (rate(http_client_requests_seconds_count{%1$s}[5m])) > 0)
+                """.formatted(outboundSelector(application));
+    }
+
+    // 평균에 묻히는 튀는 호출을 보기 위한 최댓값 - _max는 짧은 구간만 유지되는 gauge라 5분 창으로 맞춘다
+    static String outboundMaxLatency(String application) {
+        return """
+                max by (client_name) (max_over_time(http_client_requests_seconds_max{%s}[5m]))
+                """.formatted(outboundSelector(application));
+    }
+
+    // 실패 = 5xx 또는 응답 자체를 못 받은 경우(CLIENT_ERROR/IO_ERROR). 4xx는 비즈니스 응답일 수 있어 제외.
+    // 실패가 0건인 대상은 분자 시계열이 아예 없어서 나눗셈 결과에서 빠지므로 "or ... * 0"으로 0을 채운다 -
+    // "이 대상은 정상"이라는 것도 원인 배제 근거라 LLM에 보여줘야 함
+    static String outboundFailureRate(String application) {
+        String selector = outboundSelector(application);
+        return """
+                (
+                  sum by (client_name) (rate(http_client_requests_seconds_count{%1$s, status=~"5..|IO_ERROR|CLIENT_ERROR"}[5m]))
+                  or
+                  sum by (client_name) (rate(http_client_requests_seconds_count{%1$s}[5m])) * 0
+                )
+                /
+                (sum by (client_name) (rate(http_client_requests_seconds_count{%1$s}[5m])) > 0)
+                """.formatted(selector);
+    }
+
+    // Eureka 레지스트리 폴링은 주기적으로 항상 발생해서 원인 분석에 노이즈만 됨
+    private static String outboundSelector(String application) {
+        return "application=\"%s\", client_name!=\"discovery-service\"".formatted(application);
+    }
 }
