@@ -61,7 +61,7 @@ jobs:
           file: ${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/sajo-team/sajo-${{ matrix.service }}:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/wootae01/sajo-${{ matrix.service }}:${{ github.event.workflow_run.head_sha }}
 
   deploy:
     needs: build-and-push
@@ -278,4 +278,4 @@ jobs:
           key: ${{ secrets.STAGING_EC2_SSH_KEY }}
           script_stop: false
           script: |
-            docker images 'ghcr.io/sajo-team/*' -q | xargs -r docker rmi
+            docker images 'ghcr.io/wootae01/*' -q | xargs -r docker rmi
