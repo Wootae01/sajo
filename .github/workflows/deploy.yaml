@@ -64,7 +64,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     permissions:
       contents: read
@@ -182,7 +182,8 @@ jobs:
               # 체크한다 - discovery-service의 기존 docker-compose healthcheck와
               # 동일한 방식(wget, eclipse-temurin:21-jre 이미지에 포함되어 있음).
               local container_ports="user-service:8081 market-service:8082 trading-service:8083 operation-service:8084"
-              for i in $(seq 1 30); do
+              # t3.large(2 vCPU)에서 JVM 7개 동시 기동이 150초를 넘겨 실패한 적이 있어 60회(5분+)로 늘림
+              for i in $(seq 1 60); do
                 all_up=true
                 for port in $host_ports; do
                   if ! curl -sf --max-time 5 http://localhost:$port/actuator/health | grep -q '"status":"UP"'; then
@@ -203,7 +204,7 @@ jobs:
                 if [ "$all_up" = true ]; then
                   return 0
                 fi
-                echo "Not all services healthy yet, retrying ($i/30)..."
+                echo "Not all services healthy yet, retrying ($i/60)..."
                 sleep 5
               done
               return 1
