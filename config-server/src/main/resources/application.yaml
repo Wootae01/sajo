@@ -8,7 +8,7 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/sajo-team/sajo-config-repo.git
+          uri: https://github.com/Wootae01/sajo-config-repo.git
           username: ${GITHUB_USERNAME}
           password: ${GITHUB_TOKEN}
           default-label: main
