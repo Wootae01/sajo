@@ -241,7 +241,7 @@ services:
   # staging 프로필 설정을 추가해야 하므로, 이번 PR 범위에서는 다루지 않았다.
   # ---------------------------------------------------------------------
   discovery-service:
-    image: ghcr.io/sajo-team/sajo-discovery-service:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-discovery-service:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: discovery-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -258,7 +258,7 @@ services:
       start_period: 10s
 
   config-server:
-    image: ghcr.io/sajo-team/sajo-config-server:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-config-server:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: config-server
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -281,7 +281,7 @@ services:
       start_period: 15s
 
   gateway:
-    image: ghcr.io/sajo-team/sajo-gateway:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-gateway:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: gateway
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -298,7 +298,7 @@ services:
     restart: unless-stopped
 
   user-service:
-    image: ghcr.io/sajo-team/sajo-user-service:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-user-service:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: user-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -317,7 +317,7 @@ services:
     restart: unless-stopped
 
   market-service:
-    image: ghcr.io/sajo-team/sajo-market-service:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-market-service:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: market-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -360,7 +360,7 @@ services:
     restart: unless-stopped
 
   trading-service:
-    image: ghcr.io/sajo-team/sajo-trading-service:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-trading-service:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: trading-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -393,7 +393,7 @@ services:
     restart: unless-stopped
 
   operation-service:
-    image: ghcr.io/sajo-team/sajo-operation-service:${IMAGE_TAG:?IMAGE_TAG must be set}
+    image: ghcr.io/wootae01/sajo-operation-service:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: operation-service
     environment:
       SPRING_PROFILES_ACTIVE: prod
