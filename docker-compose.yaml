@@ -56,7 +56,9 @@ services:
     restart: unless-stopped
 
   mongo-ai-risk:
-    image: mongo:8.0
+    # MongoDB 8.0+는 Linux 커널 6.19~7.0.13에서 기동을 거부한다(SERVER-121912, 새 TCMalloc의 rseq 의존).
+    # prod/staging과 버전을 맞추고 WSL 커널 업데이트에 대비해 7.0을 쓴다 - 커널 7.0.14+에서는 8.0 복귀 가능.
+    image: mongo:7.0
     container_name: sajo-mongo-ai-risk
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
