@@ -33,7 +33,9 @@ services:
       start_period: 10s
 
   mongo-ai-risk:
-    image: mongo:8.0
+    # MongoDB 8.0+는 Linux 커널 6.19~7.0.13에서 기동을 거부한다(SERVER-121912, 새 TCMalloc의 rseq 의존).
+    # EC2 Ubuntu 커널이 이 범위라 7.0을 쓴다 - 커널이 7.0.14+로 올라가면 8.0으로 되돌릴 수 있다.
+    image: mongo:7.0
     container_name: sajo-mongo-ai-risk
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
