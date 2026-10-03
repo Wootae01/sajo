@@ -28,6 +28,9 @@
 #     ./loadtest/kis-token-cache-concurrency.sh <userId> 20  # 본 측정
 #
 #   끝나면: docker start sajo-redis
+#
+# 주의: KIS 접근토큰 발급은 1분당 1회 제한(EGW00133)이 있으므로 회차 간 65초 이상 간격을 둘 것
+#       (앞 회차의 발급 이력 때문에 다음 회차 결과가 오염됨)
 
 # 에러/미정의 변수/파이프 실패 시 즉시 중단
 set -euo pipefail
@@ -47,8 +50,13 @@ fi
 # 스크립트 위치 기준으로 레포 루트와 .env 경로 계산
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo ".env 파일이 없습니다: $ENV_FILE" >&2
+    exit 1
+fi
 # 내부 API 호출용 시크릿을 .env에서 읽음 (.env가 CRLF면 \r이 헤더에 섞여 톰캣이 거부하므로 제거)
-INTERNAL_SECRET="$(grep '^INTERNAL_API_SECRET=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r')"
+# 키가 없으면 grep이 1을 반환해 set -e로 조용히 종료되므로 || true로 아래 안내 메시지까지 진행
+INTERNAL_SECRET="$(grep '^INTERNAL_API_SECRET=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r' || true)"
 
 # gateway를 거치지 않고 user-service 내부 토큰 API로 직접 호출
 USER_SERVICE_URL="http://localhost:8081/internal/v1/accounts/${ACCOUNT_USER_ID}/token"
