@@ -59,3 +59,17 @@ services:
     depends_on:
       mock-kis-server:
         condition: service_healthy
+
+  # mock 계좌/토큰/주문 데이터가 실제 KIS로 만든 로컬 데이터와 섞이지 않도록 mock 전용 볼륨을 쓴다.
+  # 오버레이 없이 다시 up 하면 원래 볼륨(postgres-data, redis-data)으로 돌아간다.
+  postgres:
+    volumes:
+      - postgres-mock-data:/var/lib/postgresql/data
+
+  redis:
+    volumes:
+      - redis-mock-data:/data
+
+volumes:
+  postgres-mock-data:
+  redis-mock-data:
