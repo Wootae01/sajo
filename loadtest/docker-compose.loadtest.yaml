@@ -1,0 +1,20 @@
+# 부하 테스트 공통 오버레이 - 측정 대상 서비스에 자원 제한을 걸어 로컬 PC 사양(코어/메모리)이 결과에 섞이지 않게 한다.
+# 평소 개발 때는 제한이 걸리지 않도록 override.yaml이 아니라 별도 파일로 두고, 부하 테스트 때만 -f로 붙인다.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.override.yaml -f docker-compose.mock.yaml \
+#     -f loadtest/docker-compose.loadtest.yaml up -d user-service
+#
+# 제한은 측정 대상에만 건다. mock-kis-server/postgres 같은 의존 대상까지 제한하면 주입한 지연이나
+# 쿼리 시간이 흔들려서, 바꾸려는 변수 외의 요인이 결과에 섞이기 때문이다.
+# 다른 서비스를 측정할 때는 그 서비스에 같은 기준으로 추가한다.
+services:
+  user-service:
+    # 개인 배포 서버(t3.large)의 vCPU 수와 맞춤
+    cpus: 2
+    # JVM 옵션 없이 기본 힙(컨테이너 메모리의 25% = 약 512MB)을 쓰도록 둔 채 여유를 둔 값
+    mem_limit: 2g
+    environment:
+      # 값을 비워두면 실행한 셸에 이 변수가 있을 때만 전달되고, 없으면 컨테이너에 아예 넣지 않는다
+      # (application.yaml의 open-in-view: false가 그대로 적용됨). OSIV 수정 전 재현용:
+      #   SPRING_JPA_OPEN_IN_VIEW=true docker compose ... up -d user-service
+      SPRING_JPA_OPEN_IN_VIEW:
