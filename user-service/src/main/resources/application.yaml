@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: user-service
+  jpa:
+    # 기본값(true)이면 영속성 컨텍스트와 함께 DB 커넥션도 요청이 끝날 때까지 반납되지 않아,
+    # 트랜잭션 밖에서 하는 KIS API 호출을 기다리는 동안에도 커넥션을 점유한다 → KIS 지연 시 커넥션 풀 고갈
+    open-in-view: false
   flyway:
     enabled: true
     schemas: user_account
