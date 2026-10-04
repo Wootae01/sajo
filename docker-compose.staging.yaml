@@ -191,6 +191,7 @@ services:
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./monitoring/secrets/operation_webhook_secret:/etc/alertmanager/secrets/operation_webhook_secret:ro
+      - ./monitoring/secrets/slack_webhook_url:/etc/alertmanager/secrets/slack_webhook_url:ro
     ports:
       - "127.0.0.1:9093:9093"
     networks:

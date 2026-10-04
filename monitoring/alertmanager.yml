@@ -15,6 +15,17 @@ route:
   # firing 상태가 계속 유지될 때 같은 알림을 재전송하는 주기
   repeat_interval: 1h
 
+  # 모든 알람은 operation-service 웹훅을 거쳐 Slack으로 가므로, operation-service 자신이 죽으면
+  # 자기 ServiceDown을 포함해 어떤 알람도 Slack에 도달하지 못한다(알림 경로 단일 장애점).
+  # operation-service 자신의 장애 알람만 웹훅을 건너뛰고 Slack Incoming Webhook으로 직접 보낸다.
+  #  - ServiceDown: operation-service 프로세스가 죽음
+  #  - SlackSendFailing: 프로세스는 살아 있지만 Slack 발송이 실패함(토큰/채널 문제 등)
+  routes:
+    - matchers:
+        - alertname=~"ServiceDown|SlackSendFailing"
+        - application="operation-service"
+      receiver: slack-direct
+
 # 같은 대상에서 critical이 firing 중이면 같은 alertname의 warning은 억제 (중복 알림 방지)
 # rules.yml에서 severity만 다르고 alertname은 같게 만든 쌍
 inhibit_rules:
@@ -60,3 +71,16 @@ receivers:
         http_config:
           authorization:
             credentials_file: /etc/alertmanager/secrets/operation_webhook_secret
+
+  # operation-service를 거치지 않는 Slack 직송 경로 - LLM 분석 없이 원본만 보낸다.
+  # Alertmanager 설정은 환경변수를 읽지 못해서 Incoming Webhook URL(SLACK_WEBHOOK_URL)을 파일로 마운트한다
+  # (배포 workflow가 GitHub Secret으로 monitoring/secrets/slack_webhook_url을 생성).
+  - name: slack-direct
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}:red_circle:{{ else }}:white_check_mark:{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.application }})'
+        text: |-
+          {{ range .Alerts }}{{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}_operation-service 장애로 LLM 분석 없이 Alertmanager가 직접 발송한 알림입니다_
