@@ -1,7 +1,7 @@
 package com.sajo.operation_service.controller;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertAnalysisAsyncProcessor;
+import com.sajo.operation_service.service.AlertReceiveService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,10 +24,10 @@ class AlertWebhookControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AlertAnalysisAsyncProcessor alertAnalysisAsyncProcessor;
+    private AlertReceiveService alertReceiveService;
 
     @Test
-    @DisplayName("유효한 요청이면 202와 firing 개수를 반환하고 AlertAnalysisAsyncProcessor에 위임한다")
+    @DisplayName("유효한 요청이면 202와 firing 개수를 반환하고 AlertReceiveService에 위임한다")
     void receive_validRequest_returns202AndDelegates() throws Exception {
         String requestBody = """
                 {
@@ -57,11 +57,11 @@ class AlertWebhookControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.firingAlertCount").value(1));
 
-        verify(alertAnalysisAsyncProcessor).process(any(AlertManagerWebhookRequest.class));
+        verify(alertReceiveService).receive(any(AlertManagerWebhookRequest.class));
     }
 
     @Test
-    @DisplayName("alerts가 비어있으면 400을 반환하고 AlertAnalysisAsyncProcessor를 호출하지 않는다")
+    @DisplayName("alerts가 비어있으면 400을 반환하고 AlertReceiveService를 호출하지 않는다")
     void receive_emptyAlerts_returns400AndDoesNotDelegate() throws Exception {
         String requestBody = """
                 {
@@ -75,6 +75,6 @@ class AlertWebhookControllerTest {
                         .content(requestBody))
                 .andExpect(status().isBadRequest());
 
-        verifyNoInteractions(alertAnalysisAsyncProcessor);
+        verifyNoInteractions(alertReceiveService);
     }
 }
