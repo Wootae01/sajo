@@ -16,27 +16,20 @@ public class AlertAnalysisAsyncProcessor {
     private final AlertAnalyzer alertAnalyzer;
     private final SlackNotifier slackNotifier;
 
+    // firing 알람 하나를 분석해서 원본 메시지(threadTs)의 스레드 답글로 보낸다.
+    // threadTs가 null이면(원본 발송 실패) SlackNotifier가 원본 정보 + 분석을 합친 단독 메시지로 대체한다.
+    // @Async 메서드라 예외가 호출자에게 전달되지 않으므로, 분석/Slack 발송 어디서 나든 여기서 로그로 남긴다.
     @Async("alertAnalysisExecutor")
-    public void process(AlertManagerWebhookRequest request) {
-        request.alerts().forEach(this::processOne);
-    }
-
-    // 알람 하나 처리(분석/Slack 발송 전체) 중 어디서 예외가 나든 여기서 흡수한다 - forEach 순회
-    // 중 예외가 새면 그 뒤 알람들이 조용히 누락되기 때문에, 개별 단계가 아니라 알람 단위로 감싼다.
-    private void processOne(AlertManagerWebhookRequest.Alert alert) {
+    public void analyze(AlertManagerWebhookRequest.Alert alert, String threadTs) {
         try {
-            if (alert.isFiring()) {
-                analyzeOne(alert);
-            } else {
-                notifyResolved(alert);
-            }
+            analyzeOne(alert, threadTs);
         } catch (Exception e) {
             log.error("알람 처리 실패. alertname={}, application={}",
                     alert.labels().get("alertname"), alert.labels().get("application"), e);
         }
     }
 
-    private void analyzeOne(AlertManagerWebhookRequest.Alert alert) {
+    private void analyzeOne(AlertManagerWebhookRequest.Alert alert, String threadTs) {
         Optional<String> analysis;
         try {
             analysis = alertAnalyzer.analyze(alert);
@@ -46,21 +39,17 @@ public class AlertAnalysisAsyncProcessor {
             analysis = Optional.empty();
         }
 
-        // 전략 미등록이든 LLM 호출 실패든, 분석이 없어도 알람 자체는 Slack에 전달한다 -
-        // slack_configs 제거 후 "분석 안 되면 Slack에 아예 안 뜸"이 되는 회귀를 막기 위함.
+        // 전략 미등록이든 LLM 호출 실패든, 분석이 없어도 "분석 없음"을 알린다 - 원본 발송까지 실패한 경우
+        // 이 메시지가 알람의 유일한 Slack 알림이 되므로 생략하면 "Slack에 아예 안 뜸" 회귀가 생긴다.
         if (analysis.isPresent()) {
             log.info("알람 분석 결과. alertname={}, application={}\n{}",
                     alert.labels().get("alertname"),
                     alert.labels().get("application"),
                     analysis.get()
             );
-            slackNotifier.notify(alert, analysis.get());
+            slackNotifier.replyAnalysis(alert, threadTs, analysis.get());
         } else {
-            slackNotifier.notifyWithoutAnalysis(alert);
+            slackNotifier.replyWithoutAnalysis(alert, threadTs);
         }
-    }
-
-    private void notifyResolved(AlertManagerWebhookRequest.Alert alert) {
-        slackNotifier.notifyResolved(alert);
     }
 }

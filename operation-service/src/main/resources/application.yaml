@@ -32,7 +32,10 @@ sajo:
     # (alertmanager.yml의 webhook_configs.http_config.authorization.credentials_file과 짝)
     secret-file-path: /etc/operation-service/secrets/webhook_secret
   slack:
-    webhook-url: ${SLACK_WEBHOOK_URL}
+    # chat.postMessage 응답의 ts로 분석 결과를 스레드 답글로 붙이기 위해 Incoming Webhook 대신 Bot 토큰을 씀
+    bot-token: ${SLACK_BOT_TOKEN}
+    channel-id: ${SLACK_CHANNEL_ID}
+    api-base-url: ${SLACK_API_BASE_URL:https://slack.com/api}
     rest-client:
       connect-timeout-ms: ${SLACK_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${SLACK_READ_TIMEOUT_MS:5000}
