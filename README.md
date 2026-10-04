@@ -392,7 +392,9 @@ MARKET_WEBSOCKET_TARGET_STOCK_CODES=005930,000660
 GRAFANA_ADMIN_USER=admin             # Grafana 관리자 계정
 GRAFANA_ADMIN_PASSWORD=              # Grafana 관리자 비밀번호
 
-SLACK_WEBHOOK_URL=                   # 장애/알림 Slack 발송
+SLACK_WEBHOOK_URL=                   # Grafana CPU 알림 Slack 발송 (Incoming Webhook)
+SLACK_BOT_TOKEN=                     # operation-service 알람/분석 Slack 발송 (Bot 토큰, chat:write)
+SLACK_CHANNEL_ID=                    # operation-service 알람 발송 채널 ID
 ```
 
 > 실제 Secret 값은 저장소에 커밋하지 않으며, 로컬 `.env` 또는 배포 환경의 Secret으로 관리합니다.
