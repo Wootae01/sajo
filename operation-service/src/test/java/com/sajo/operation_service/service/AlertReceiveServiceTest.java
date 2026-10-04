@@ -56,7 +56,7 @@ class AlertReceiveServiceTest {
 
     @Test
     @DisplayName("원본 발송에 실패해 ts가 없어도 분석은 threadTs=null로 진행한다")
-    void receive_postOriginalFailed_analyzesWithNullTs() {
+    void receive_sendOriginalToSlackFailed_analyzesWithNullTs() {
         AlertManagerWebhookRequest.Alert firing = createAlert("firing", "HighCpuUsage");
         when(slackNotifier.postOriginal(firing)).thenReturn(Optional.empty());
 
@@ -67,7 +67,7 @@ class AlertReceiveServiceTest {
 
     @Test
     @DisplayName("원본 발송 중 예상 못한 예외가 나도 분석은 threadTs=null로 진행한다")
-    void receive_postOriginalThrows_analyzesWithNullTs() {
+    void receive_sendOriginalToSlackThrows_analyzesWithNullTs() {
         AlertManagerWebhookRequest.Alert firing = createAlert("firing", "HighCpuUsage");
         when(slackNotifier.postOriginal(firing)).thenThrow(new RuntimeException("예상 못한 예외"));
 

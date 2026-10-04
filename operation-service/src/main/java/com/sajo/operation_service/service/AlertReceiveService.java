@@ -25,7 +25,7 @@ public class AlertReceiveService {
     private void receiveOne(AlertManagerWebhookRequest.Alert alert) {
         try {
             if (alert.isFiring()) {
-                alertAnalysisAsyncProcessor.analyze(alert, postOriginal(alert));
+                alertAnalysisAsyncProcessor.analyze(alert, sendOriginalToSlack(alert));
             } else {
                 slackNotifier.notifyResolved(alert);
             }
@@ -36,7 +36,7 @@ public class AlertReceiveService {
     }
 
     // 원본 발송이 어떤 이유로 실패해도 분석은 진행해야 하므로 예외를 null(답글 대상 없음)로 바꾼다
-    private String postOriginal(AlertManagerWebhookRequest.Alert alert) {
+    private String sendOriginalToSlack(AlertManagerWebhookRequest.Alert alert) {
         try {
             return slackNotifier.postOriginal(alert).orElse(null);
         } catch (Exception e) {
