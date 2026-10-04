@@ -54,9 +54,9 @@ public class AlertAnalysisAsyncProcessor {
                     alert.labels().get("application"),
                     analysis.get()
             );
-            slackNotifier.notify(alert, analysis.get());
+            slackNotifier.replyAnalysis(alert, null, analysis.get());
         } else {
-            slackNotifier.notifyWithoutAnalysis(alert);
+            slackNotifier.replyWithoutAnalysis(alert, null);
         }
     }
 

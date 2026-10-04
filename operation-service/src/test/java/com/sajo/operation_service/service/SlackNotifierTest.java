@@ -9,12 +9,20 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class SlackNotifierTest {
+
+    private static final String THREAD_TS = "1728000000.000100";
 
     private final SlackClient slackClient = mock(SlackClient.class);
     private final SlackNotifier slackNotifier = new SlackNotifier(slackClient);
@@ -29,59 +37,117 @@ class SlackNotifierTest {
         );
     }
 
-    private SlackMessageRequest.Attachment captureAttachment() {
+    private Alert firing(String severity) {
+        return alert("firing", severity, Instant.now(), Instant.EPOCH);
+    }
+
+    private SlackMessageRequest.Attachment captureSent() {
         ArgumentCaptor<SlackMessageRequest> captor = ArgumentCaptor.forClass(SlackMessageRequest.class);
         verify(slackClient).send(captor.capture());
         return captor.getValue().attachments().get(0);
     }
 
+    private SlackMessageRequest.Attachment captureReplied(String threadTs) {
+        ArgumentCaptor<SlackMessageRequest> captor = ArgumentCaptor.forClass(SlackMessageRequest.class);
+        verify(slackClient).reply(eq(threadTs), captor.capture());
+        return captor.getValue().attachments().get(0);
+    }
+
     @Test
-    @DisplayName("critical 알람은 danger 색상으로, LLM 분석 결과를 포함해 보낸다")
-    void notify_critical_sendsDangerColorWithAnalysis() {
-        Alert alert = alert("firing", "critical", Instant.now(), Instant.EPOCH);
+    @DisplayName("원본은 알람 정보와 스레드 안내 문구로 새 메시지를 보내고, client가 돌려준 ts를 그대로 반환한다")
+    void postOriginal_sendsAlertInfoAndReturnsTs() {
+        when(slackClient.send(any())).thenReturn(Optional.of(THREAD_TS));
 
-        slackNotifier.notify(alert, "분석 결과 텍스트");
+        Optional<String> ts = slackNotifier.postOriginal(firing("critical"));
 
-        SlackMessageRequest.Attachment attachment = captureAttachment();
+        assertThat(ts).contains(THREAD_TS);
+        SlackMessageRequest.Attachment attachment = captureSent();
         assertThat(attachment.color()).isEqualTo("danger");
         assertThat(attachment.text())
+                .contains(":red_circle:")
                 .contains("HighCpuUsage")
                 .contains("CPU 사용률 95% 초과")
-                .contains("LLM 분석")
-                .contains("분석 결과 텍스트");
+                .contains("trading-service")
+                .contains("5분간 지속")
+                .contains("스레드에 답글로 달립니다")
+                .doesNotContain("*LLM 분석*");
+    }
+
+    @Test
+    @DisplayName("원본 발송에 실패하면 빈 값을 그대로 반환한다")
+    void postOriginal_sendFailed_returnsEmpty() {
+        when(slackClient.send(any())).thenReturn(Optional.empty());
+
+        assertThat(slackNotifier.postOriginal(firing("critical"))).isEmpty();
     }
 
     @Test
     @DisplayName("warning 알람은 warning 색상으로 보낸다")
-    void notify_warning_sendsWarningColor() {
-        Alert alert = alert("firing", "warning", Instant.now(), Instant.EPOCH);
+    void postOriginal_warning_sendsWarningColor() {
+        slackNotifier.postOriginal(firing("warning"));
 
-        slackNotifier.notify(alert, "분석 결과");
-
-        assertThat(captureAttachment().color()).isEqualTo("warning");
+        assertThat(captureSent().color()).isEqualTo("warning");
     }
 
     @Test
     @DisplayName("severity가 critical/warning이 아니면 기본(good) 색상으로 보낸다")
-    void notify_unknownSeverity_sendsDefaultColor() {
-        Alert alert = alert("firing", "info", Instant.now(), Instant.EPOCH);
+    void postOriginal_unknownSeverity_sendsDefaultColor() {
+        slackNotifier.postOriginal(firing("info"));
 
-        slackNotifier.notify(alert, "분석 결과");
-
-        assertThat(captureAttachment().color()).isEqualTo("good");
+        assertThat(captureSent().color()).isEqualTo("good");
     }
 
     @Test
-    @DisplayName("분석 없이 보내면 안내 문구를 포함하고 LLM 분석 섹션은 없다")
-    void notifyWithoutAnalysis_sendsFallbackMessage() {
-        Alert alert = alert("firing", "critical", Instant.now(), Instant.EPOCH);
+    @DisplayName("threadTs가 있으면 분석 결과만 스레드 답글로 보낸다")
+    void replyAnalysis_withThreadTs_repliesAnalysisOnly() {
+        slackNotifier.replyAnalysis(firing("critical"), THREAD_TS, "분석 결과 텍스트");
 
-        slackNotifier.notifyWithoutAnalysis(alert);
+        SlackMessageRequest.Attachment attachment = captureReplied(THREAD_TS);
+        assertThat(attachment.color()).isEqualTo("danger");
+        assertThat(attachment.text())
+                .contains("*LLM 분석*")
+                .contains("분석 결과 텍스트")
+                .doesNotContain("CPU 사용률 95% 초과");
+        verify(slackClient, never()).send(any());
+    }
 
-        SlackMessageRequest.Attachment attachment = captureAttachment();
+    @Test
+    @DisplayName("threadTs가 없으면(원본 발송 실패) 알람 정보 + 분석을 합친 단독 메시지로 보낸다")
+    void replyAnalysis_withoutThreadTs_sendsCombinedMessage() {
+        slackNotifier.replyAnalysis(firing("critical"), null, "분석 결과 텍스트");
+
+        SlackMessageRequest.Attachment attachment = captureSent();
+        assertThat(attachment.text())
+                .contains("HighCpuUsage")
+                .contains("CPU 사용률 95% 초과")
+                .contains("*LLM 분석*")
+                .contains("분석 결과 텍스트");
+        verify(slackClient, never()).reply(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("threadTs가 있으면 분석 없음 안내만 스레드 답글로 보낸다")
+    void replyWithoutAnalysis_withThreadTs_repliesNotice() {
+        slackNotifier.replyWithoutAnalysis(firing("critical"), THREAD_TS);
+
+        SlackMessageRequest.Attachment attachment = captureReplied(THREAD_TS);
         assertThat(attachment.text())
                 .contains("전략 미등록 또는 분석 실패")
+                .doesNotContain("CPU 사용률 95% 초과");
+        verify(slackClient, never()).send(any());
+    }
+
+    @Test
+    @DisplayName("threadTs가 없으면 알람 정보 + 분석 없음 안내를 단독 메시지로 보낸다 - Slack에 아예 안 뜨는 회귀 방지")
+    void replyWithoutAnalysis_withoutThreadTs_sendsFallbackMessage() {
+        slackNotifier.replyWithoutAnalysis(firing("critical"), null);
+
+        SlackMessageRequest.Attachment attachment = captureSent();
+        assertThat(attachment.text())
+                .contains("CPU 사용률 95% 초과")
+                .contains("전략 미등록 또는 분석 실패")
                 .doesNotContain("*LLM 분석*");
+        verify(slackClient, never()).reply(anyString(), any());
     }
 
     @Test
@@ -95,7 +161,7 @@ class SlackNotifierTest {
 
         slackNotifier.notifyResolved(alert);
 
-        SlackMessageRequest.Attachment attachment = captureAttachment();
+        SlackMessageRequest.Attachment attachment = captureSent();
         assertThat(attachment.color()).isEqualTo("good");
         assertThat(attachment.text()).contains("RESOLVED").contains("1분 30초");
     }
@@ -111,6 +177,6 @@ class SlackNotifierTest {
 
         slackNotifier.notifyResolved(alert);
 
-        assertThat(captureAttachment().text()).contains("지속시간: 0초");
+        assertThat(captureSent().text()).contains("지속시간: 0초");
     }
 }

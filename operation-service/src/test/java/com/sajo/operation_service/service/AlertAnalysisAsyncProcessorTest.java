@@ -48,13 +48,13 @@ class AlertAnalysisAsyncProcessorTest {
 
         verify(alertAnalyzer, times(1)).analyze(any());
         verify(alertAnalyzer).analyze(firing);
-        verify(slackNotifier).notify(firing, "분석 결과");
+        verify(slackNotifier).replyAnalysis(firing, null, "분석 결과");
         verify(slackNotifier).notifyResolved(resolved);
-        verify(slackNotifier, never()).notify(eq(resolved), anyString());
+        verify(slackNotifier, never()).replyAnalysis(eq(resolved), any(), anyString());
     }
 
     @Test
-    @DisplayName("전략 미등록 등으로 분석이 없으면 raw 알림(notifyWithoutAnalysis)을 보낸다 - Slack에 아예 안 뜨는 회귀 방지")
+    @DisplayName("전략 미등록 등으로 분석이 없으면 raw 알림(replyWithoutAnalysis)을 보낸다 - Slack에 아예 안 뜨는 회귀 방지")
     void process_noAnalysis_notifiesWithoutAnalysis() {
         AlertManagerWebhookRequest.Alert firing = createAlert("firing", "UnknownAlert");
 
@@ -62,8 +62,8 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.process(new AlertManagerWebhookRequest("firing", List.of(firing)));
 
-        verify(slackNotifier).notifyWithoutAnalysis(firing);
-        verify(slackNotifier, never()).notify(eq(firing), anyString());
+        verify(slackNotifier).replyWithoutAnalysis(firing, null);
+        verify(slackNotifier, never()).replyAnalysis(eq(firing), any(), anyString());
     }
 
     @Test
@@ -89,23 +89,23 @@ class AlertAnalysisAsyncProcessorTest {
 
         verify(alertAnalyzer).analyze(first);
         verify(alertAnalyzer).analyze(second);
-        verify(slackNotifier).notifyWithoutAnalysis(first);
-        verify(slackNotifier).notify(second, "분석 결과");
+        verify(slackNotifier).replyWithoutAnalysis(first, null);
+        verify(slackNotifier).replyAnalysis(second, null, "분석 결과");
     }
 
     @Test
-    @DisplayName("Slack 발송(notify) 중 예상 못한 예외가 나도 나머지 알람은 계속 처리한다")
+    @DisplayName("Slack 발송(replyAnalysis) 중 예상 못한 예외가 나도 나머지 알람은 계속 처리한다")
     void process_notifyThrows_doesNotStopBatch() {
         AlertManagerWebhookRequest.Alert first = createAlert("firing", "HighCpuUsage");
         AlertManagerWebhookRequest.Alert second = createAlert("firing", "HighErrorRate");
 
         when(alertAnalyzer.analyze(any())).thenReturn(Optional.of("분석 결과"));
         doThrow(new RuntimeException("잘못된 webhook URL 설정 등 예상 못한 예외"))
-                .when(slackNotifier).notify(eq(first), anyString());
+                .when(slackNotifier).replyAnalysis(eq(first), any(), anyString());
 
         processor.process(new AlertManagerWebhookRequest("firing", List.of(first, second)));
 
-        verify(slackNotifier).notify(second, "분석 결과");
+        verify(slackNotifier).replyAnalysis(second, null, "분석 결과");
     }
 
     @Test
@@ -120,6 +120,6 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.process(new AlertManagerWebhookRequest("firing", List.of(resolved, firing)));
 
-        verify(slackNotifier).notify(firing, "분석 결과");
+        verify(slackNotifier).replyAnalysis(firing, null, "분석 결과");
     }
 }
