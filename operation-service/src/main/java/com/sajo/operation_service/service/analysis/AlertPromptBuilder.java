@@ -3,7 +3,6 @@ package com.sajo.operation_service.service.analysis;
 import com.sajo.operation_service.client.PrometheusQueryResult;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
 import com.sajo.operation_service.service.strategy.StrategyDiagnosis;
-import org.springframework.ai.converter.BeanOutputConverter;
 
 import java.util.List;
 import java.util.Map;
@@ -116,9 +115,9 @@ final class AlertPromptBuilder {
               is evidence for the external-api candidate.
             """;
 
-    // 응답 형식(JSON 스키마)은 StructuredAnalysis에서 자동 생성해 시스템 프롬프트에 붙인다 -
-    // 이력에 남는 systemPrompt가 실제로 보낸 내용과 같아야 재생/평가 때 같은 조건을 재현할 수 있다
-    static final String SYSTEM_PROMPT = INSTRUCTIONS + "\n" + new BeanOutputConverter<>(StructuredAnalysis.class).getFormat();
+    // 응답 JSON 스키마는 프롬프트에 넣지 않는다 - AlertAnalyzer가 structured output(response_format)으로 API에 따로 넘긴다.
+    // 스키마는 StructuredAnalysis 타입에서 생성되므로, 재생/평가 때는 같은 커밋의 타입이 곧 같은 스키마다.
+    static final String SYSTEM_PROMPT = INSTRUCTIONS;
 
     // 섹션 제목은 시스템 프롬프트가 가리키는 이름([Cause candidates], [Alert diagnostics])과 맞춰야 한다.
     // 지표 이름은 진단 서비스가 붙인 한국어 라벨이 그대로 들어간다.

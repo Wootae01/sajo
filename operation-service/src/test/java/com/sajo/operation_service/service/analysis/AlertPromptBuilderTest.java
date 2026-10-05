@@ -14,12 +14,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AlertPromptBuilderTest {
 
     @Test
-    @DisplayName("시스템 프롬프트에 StructuredAnalysis에서 생성한 JSON 스키마가 붙는다")
-    void systemPromptIncludesSchema() {
+    @DisplayName("시스템 프롬프트에는 판정 기준만 있고 JSON 스키마는 없다 - 스키마는 structured output으로 따로 넘긴다")
+    void systemPromptHasInstructionsWithoutSchema() {
         assertThat(AlertPromptBuilder.SYSTEM_PROMPT)
-                .contains("observations", "candidates", "topCauses", "nextChecks", "evidence")
+                .contains("observations", "candidates", "topCauses", "nextChecks")
                 .contains("LIKELY", "RULED_OUT", "INSUFFICIENT_DATA")
-                .contains("CONNECTION_EXHAUSTED", "CONSUMER_LAG");
+                .doesNotContain("$schema");
     }
 
     @Test

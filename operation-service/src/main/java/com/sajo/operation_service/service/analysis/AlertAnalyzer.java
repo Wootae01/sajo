@@ -11,6 +11,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.openai.OpenAiChatModel.ResponseFormat;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -24,10 +26,19 @@ import java.util.Optional;
 @Service
 public class AlertAnalyzer {
 
-    // 응답 JSON -> StructuredAnalysis. 프롬프트에 붙는 스키마와 같은 타입에서 만든다(AlertPromptBuilder.SYSTEM_PROMPT).
-    // ```json 코드블록으로 감싸 와도 벗겨내고 파싱한다. 상태가 없어서 여러 스레드가 같이 써도 된다.
+    // StructuredAnalysis 타입 하나에서 응답 스키마(요청)와 파싱(응답)을 같이 만든다 - 둘이 어긋날 일이 없게 하기 위함.
+    // 상태가 없어서 여러 스레드가 같이 써도 된다.
     private static final BeanOutputConverter<StructuredAnalysis> OUTPUT_CONVERTER =
             new BeanOutputConverter<>(StructuredAnalysis.class);
+
+    // OpenAI structured output(strict) - 프롬프트로 "JSON으로 답해라"라고 부탁하는 대신 API가 스키마대로 생성하게 강제한다.
+    // JSON이 아닌 응답/필드 누락/정의에 없는 enum 값이 나오지 않아서 형식 실패 재요청이 필요 없다.
+    // 스키마로 강제할 수 없는 내용 오류(후보 누락 등)는 따로 검증한다.
+    private static final ResponseFormat RESPONSE_FORMAT = ResponseFormat.builder()
+            .type(ResponseFormat.Type.JSON_SCHEMA)
+            .jsonSchema(OUTPUT_CONVERTER.getJsonSchema())
+            .strict(true)
+            .build();
 
     private final HostDiagnosticsService hostDiagnosticsService;
     private final DependencyMappingService dependencyMappingService;
@@ -99,6 +110,7 @@ public class AlertAnalyzer {
         ChatResponse chatResponse = chatClient.prompt()
                 .system(AlertPromptBuilder.SYSTEM_PROMPT)
                 .user(userPrompt)
+                .options(OpenAiChatOptions.builder().responseFormat(RESPONSE_FORMAT))
                 .call()
                 .chatResponse();
         long latencyMs = (System.nanoTime() - startedAt) / 1_000_000;
@@ -123,8 +135,8 @@ public class AlertAnalyzer {
         ));
     }
 
-    // 파싱 실패도 빈 응답과 같이 분석 실패로 본다. 실패 이력에는 예외 메시지만 남아서 원문 응답은 로그로 남긴다 -
-    // 형식이 왜 틀렸는지 봐야 프롬프트를 고칠 수 있다. (형식 검증과 재요청은 다음 단계에서 추가)
+    // structured output이라 형식이 틀리는 경우는 드물다(모델의 응답 거부, 토큰 한도로 잘린 응답 정도).
+    // 그래도 실패하면 빈 응답과 같이 분석 실패로 본다. 실패 이력에는 예외 메시지만 남아서 원문 응답은 로그로 남긴다.
     private StructuredAnalysis parse(String response, String alertname) {
         try {
             return OUTPUT_CONVERTER.convert(response);

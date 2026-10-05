@@ -27,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -34,6 +35,9 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.openai.OpenAiChatModel.ResponseFormat;
+import org.springframework.ai.openai.OpenAiChatOptions;
 
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +52,7 @@ import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -149,7 +154,7 @@ class AlertAnalyzerTest {
     @DisplayName("분석 결과에 이력용 정보(프롬프트 전문, 모델, 토큰 사용량, 지연)를 함께 담는다")
     void analyze_success_returnsResultWithAuditFields() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
         AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
@@ -163,10 +168,29 @@ class AlertAnalyzerTest {
     }
 
     @Test
+    @DisplayName("OpenAI structured output(strict, StructuredAnalysis 스키마)으로 요청한다")
+    void analyze_requestsStructuredOutputWithSchema() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        alertAnalyzer.analyze(alert);
+
+        ArgumentCaptor<OpenAiChatOptions.Builder> captor = ArgumentCaptor.forClass(OpenAiChatOptions.Builder.class);
+        // deep stub이라 위 when(...)의 체인도 options() 호출로 집계된다 - 마지막 값(실제 analyze 호출)을 본다
+        verify(chatClient.prompt().system(anyString()).user(anyString()), atLeastOnce()).options(captor.capture());
+        ResponseFormat responseFormat = captor.getValue().build().getResponseFormat();
+        assertThat(responseFormat.getType()).isEqualTo(ResponseFormat.Type.JSON_SCHEMA);
+        assertThat(responseFormat.getStrict()).isTrue();
+        assertThat(responseFormat.getJsonSchema())
+                .isEqualTo(new BeanOutputConverter<>(StructuredAnalysis.class).getJsonSchema());
+    }
+
+    @Test
     @DisplayName("LLM 응답 JSON을 StructuredAnalysis로 파싱해 원문과 함께 담는다")
     void analyze_validJson_parsesStructuredAnalysis() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
         StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
@@ -185,7 +209,7 @@ class AlertAnalyzerTest {
     @DisplayName("LLM이 JSON을 ```json 코드블록으로 감싸 보내도 파싱한다")
     void analyze_jsonInCodeBlock_parses() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse("```json\n" + VALID_JSON + "```"));
 
         StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
@@ -197,7 +221,7 @@ class AlertAnalyzerTest {
     @DisplayName("LLM 응답이 JSON이 아니면 분석 실패(예외)로 처리한다")
     void analyze_notJson_throws() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse("1. 관찰된 사실: CPU가 높습니다"));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
@@ -210,7 +234,7 @@ class AlertAnalyzerTest {
     void analyze_unknownEnumValue_throws() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
         String unknownCategory = VALID_JSON.replace("\"category\": \"CPU\"", "\"category\": \"DEPLOYMENT\"");
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(unknownCategory));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
@@ -222,7 +246,7 @@ class AlertAnalyzerTest {
     @DisplayName("LLM 응답이 비어 있으면 empty(분석 대상 아님)가 아니라 예외(분석 실패)로 처리한다 - 이력에서 SKIPPED/FAILED 구분")
     void analyze_blankLlmResponse_throwsInsteadOfEmpty() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse("  "));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
@@ -244,7 +268,7 @@ class AlertAnalyzerTest {
                 .thenReturn(Map.of("[의존 대상: postgres] Postgres 커넥션 사용률(0~1)", dummy));
         when(appMetricsStrategy.diagnose(alert, alert.startsAt()))
                 .thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of("CPU 사용률(0~1)", dummy)));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
@@ -262,7 +286,7 @@ class AlertAnalyzerTest {
         PrometheusQueryResult dummy = PrometheusQueryResult.success("query", List.of());
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
@@ -282,7 +306,7 @@ class AlertAnalyzerTest {
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
         when(dependencyMappingService.collect("node", alert.startsAt())).thenReturn(Map.of());
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
@@ -389,7 +413,7 @@ class AlertAnalyzerTest {
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
         when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenThrow(new RuntimeException("OpenAI API error"));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
