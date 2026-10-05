@@ -36,6 +36,9 @@ class AlertReceiveServiceAsyncTest {
     @MockitoBean
     private AlertAnalysisAsyncProcessor alertAnalysisAsyncProcessor;
 
+    @MockitoBean
+    private AlertHistoryService alertHistoryService;
+
     @Test
     @DisplayName("Slack 원본 발송이 멈춰 있어도 receive는 바로 반환하고, 발송은 alert-notify 스레드에서 실행된다")
     void receive_doesNotWaitForSlack_andRunsOnNotifyExecutor() throws Exception {
@@ -51,7 +54,8 @@ class AlertReceiveServiceAsyncTest {
                 Map.of("alertname", "HighCpuUsage", "application", "trading-service"),
                 Map.of(),
                 Instant.parse("2026-09-17T03:00:00Z"),
-                Instant.parse("2026-09-17T03:05:00Z")
+                Instant.parse("2026-09-17T03:05:00Z"),
+                null
         );
 
         long start = System.nanoTime();

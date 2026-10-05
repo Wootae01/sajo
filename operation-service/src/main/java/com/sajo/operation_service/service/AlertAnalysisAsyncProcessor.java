@@ -15,6 +15,7 @@ public class AlertAnalysisAsyncProcessor {
 
     private final AlertAnalyzer alertAnalyzer;
     private final SlackNotifier slackNotifier;
+    private final AlertHistoryService alertHistoryService;
 
     // firing 알람 하나를 분석해서 원본 메시지(threadTs)의 스레드 답글로 보낸다.
     // threadTs가 null이면(원본 발송 실패) SlackNotifier가 원본 정보 + 분석을 합친 단독 메시지로 대체한다.
@@ -29,27 +30,34 @@ public class AlertAnalysisAsyncProcessor {
         }
     }
 
+    // 전략 미등록이든 LLM 호출 실패든, 분석이 없어도 "분석 없음"을 알린다 - 원본 발송까지 실패한 경우
+    // 이 메시지가 알람의 유일한 Slack 알림이 되므로 생략하면 "Slack에 아예 안 뜸" 회귀가 생긴다.
+    // Slack 쪽은 둘을 같은 안내로 보내지만, 이력에는 SKIPPED(의도된 미분석)/FAILED(장애)로 구분해 남긴다.
+    // 이력 저장은 Slack 발송 이후에 한다 - 저장이 느리거나 실패해도 알람 전달에는 영향이 없게 하기 위함.
     private void analyzeOne(AlertManagerWebhookRequest.Alert alert, String threadTs) {
-        Optional<String> analysis;
+        Optional<AlertAnalysisResult> analysis;
         try {
             analysis = alertAnalyzer.analyze(alert);
         } catch (Exception e) {
             log.error("알람 분석 실패. alertname={}, application={}",
                     alert.labels().get("alertname"), alert.labels().get("application"), e);
-            analysis = Optional.empty();
+            String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
+            alertHistoryService.recordAnalysisFailed(alert, e, threadTs, messageTs);
+            return;
         }
 
-        // 전략 미등록이든 LLM 호출 실패든, 분석이 없어도 "분석 없음"을 알린다 - 원본 발송까지 실패한 경우
-        // 이 메시지가 알람의 유일한 Slack 알림이 되므로 생략하면 "Slack에 아예 안 뜸" 회귀가 생긴다.
         if (analysis.isPresent()) {
+            AlertAnalysisResult result = analysis.get();
             log.info("알람 분석 결과. alertname={}, application={}\n{}",
                     alert.labels().get("alertname"),
                     alert.labels().get("application"),
-                    analysis.get()
+                    result.response()
             );
-            slackNotifier.replyAnalysis(alert, threadTs, analysis.get());
+            String messageTs = slackNotifier.replyAnalysis(alert, threadTs, result.response()).orElse(null);
+            alertHistoryService.recordAnalyzed(alert, result, threadTs, messageTs);
         } else {
-            slackNotifier.replyWithoutAnalysis(alert, threadTs);
+            String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
+            alertHistoryService.recordAnalysisSkipped(alert, threadTs, messageTs);
         }
     }
 }

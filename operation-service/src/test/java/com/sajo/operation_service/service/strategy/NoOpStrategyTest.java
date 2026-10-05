@@ -18,7 +18,8 @@ class NoOpStrategyTest {
         NoOpStrategy strategy = new NoOpStrategy();
         AlertManagerWebhookRequest.Alert alert = new AlertManagerWebhookRequest.Alert(
                 "firing", Map.of("alertname", "HighNodeCpuUsage"), Map.of(),
-                Instant.parse("2026-09-18T03:00:00Z"), Instant.parse("2026-09-18T03:00:00Z")
+                Instant.parse("2026-09-18T03:00:00Z"), Instant.parse("2026-09-18T03:00:00Z"),
+                null
         );
 
         StrategyDiagnosis result = strategy.diagnose(alert, alert.startsAt());

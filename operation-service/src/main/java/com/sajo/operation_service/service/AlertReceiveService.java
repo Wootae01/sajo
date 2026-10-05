@@ -17,6 +17,7 @@ public class AlertReceiveService {
 
     private final SlackNotifier slackNotifier;
     private final AlertAnalysisAsyncProcessor alertAnalysisAsyncProcessor;
+    private final AlertHistoryService alertHistoryService;
 
     @Async("alertNotifyExecutor")
     public void receive(AlertManagerWebhookRequest request) {
@@ -29,7 +30,8 @@ public class AlertReceiveService {
             if (alert.isFiring()) {
                 alertAnalysisAsyncProcessor.analyze(alert, sendOriginalToSlack(alert));
             } else {
-                slackNotifier.notifyResolved(alert);
+                String messageTs = slackNotifier.notifyResolved(alert).orElse(null);
+                alertHistoryService.recordResolved(alert, messageTs);
             }
         } catch (Exception e) {
             log.error("알람 수신 처리 실패. alertname={}, application={}",

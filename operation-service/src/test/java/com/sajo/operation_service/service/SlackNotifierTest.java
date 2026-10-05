@@ -33,7 +33,8 @@ class SlackNotifierTest {
                 Map.of("alertname", "HighCpuUsage", "application", "trading-service", "severity", severity),
                 Map.of("summary", "CPU 사용률 95% 초과", "description", "5분간 지속"),
                 startsAt,
-                endsAt
+                endsAt,
+                null
         );
     }
 
@@ -109,6 +110,16 @@ class SlackNotifierTest {
                 .contains("분석 결과 텍스트")
                 .doesNotContain("CPU 사용률 95% 초과");
         verify(slackClient, never()).send(any());
+    }
+
+    @Test
+    @DisplayName("답글 발송 결과(ts)를 그대로 돌려준다 - 실패(empty)도 버리지 않아야 이력에 전달 실패가 남는다")
+    void replyAnalysis_returnsSentMessageTs() {
+        when(slackClient.reply(eq(THREAD_TS), any())).thenReturn(Optional.of("1728000000.000200"));
+        assertThat(slackNotifier.replyAnalysis(firing("critical"), THREAD_TS, "분석")).contains("1728000000.000200");
+
+        when(slackClient.reply(eq(THREAD_TS), any())).thenReturn(Optional.empty());
+        assertThat(slackNotifier.replyWithoutAnalysis(firing("critical"), THREAD_TS)).isEmpty();
     }
 
     @Test

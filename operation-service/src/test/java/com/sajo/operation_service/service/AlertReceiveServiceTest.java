@@ -16,6 +16,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AlertReceiveServiceTest {
@@ -24,8 +25,9 @@ class AlertReceiveServiceTest {
 
     private final SlackNotifier slackNotifier = mock(SlackNotifier.class);
     private final AlertAnalysisAsyncProcessor alertAnalysisAsyncProcessor = mock(AlertAnalysisAsyncProcessor.class);
+    private final AlertHistoryService alertHistoryService = mock(AlertHistoryService.class);
     private final AlertReceiveService alertReceiveService =
-            new AlertReceiveService(slackNotifier, alertAnalysisAsyncProcessor);
+            new AlertReceiveService(slackNotifier, alertAnalysisAsyncProcessor, alertHistoryService);
 
     private AlertManagerWebhookRequest.Alert createAlert(String status, String alertname) {
         return new AlertManagerWebhookRequest.Alert(
@@ -33,7 +35,8 @@ class AlertReceiveServiceTest {
                 Map.of("alertname", alertname, "application", "trading-service"),
                 Map.of(),
                 Instant.parse("2026-09-17T03:00:00Z"),
-                Instant.parse("2026-09-17T03:05:00Z")
+                Instant.parse("2026-09-17T03:05:00Z"),
+                null
         );
     }
 
@@ -86,6 +89,30 @@ class AlertReceiveServiceTest {
         verify(slackNotifier).notifyResolved(resolved);
         verify(slackNotifier, never()).postOriginal(any());
         verify(alertAnalysisAsyncProcessor, never()).analyze(any(), any());
+    }
+
+    @Test
+    @DisplayName("resolved 알람은 복구 알림을 보낸 뒤 그 메시지 ts로 RESOLVED 이력을 남긴다")
+    void receive_resolved_recordsResolvedWithMessageTs() {
+        AlertManagerWebhookRequest.Alert resolved = createAlert("resolved", "HighCpuUsage");
+        when(slackNotifier.notifyResolved(resolved)).thenReturn(Optional.of(THREAD_TS));
+
+        alertReceiveService.receive(request(resolved));
+
+        InOrder inOrder = inOrder(slackNotifier, alertHistoryService);
+        inOrder.verify(slackNotifier).notifyResolved(resolved);
+        inOrder.verify(alertHistoryService).recordResolved(resolved, THREAD_TS);
+    }
+
+    @Test
+    @DisplayName("firing 알람의 이력은 여기서 남기지 않는다 - 분석이 끝난 뒤 AlertAnalysisAsyncProcessor가 남긴다")
+    void receive_firing_doesNotRecordHere() {
+        AlertManagerWebhookRequest.Alert firing = createAlert("firing", "HighCpuUsage");
+        when(slackNotifier.postOriginal(firing)).thenReturn(Optional.of(THREAD_TS));
+
+        alertReceiveService.receive(request(firing));
+
+        verifyNoInteractions(alertHistoryService);
     }
 
     @Test

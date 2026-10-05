@@ -515,6 +515,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID}
+      # 알람 이력(Mongo) 저장용. mongo-ai-risk를 depends_on에 안 넣은 건 의도적 - Mongo는 부가 의존성이라
+      # Mongo가 unhealthy여도 operation-service는 떠서 알람을 Slack으로 보내야 한다
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
     volumes:
       - ./monitoring/secrets/operation_webhook_secret:/etc/operation-service/secrets/webhook_secret:ro
     ports:

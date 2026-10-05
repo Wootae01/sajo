@@ -29,31 +29,30 @@ public class SlackNotifier {
         return slackClient.send(SlackMessageRequest.of(color, message));
     }
 
+    // 아래 발송 메서드들은 보낸 메시지의 ts를 돌려준다(empty = 발송 실패) - 알람 이력에 Slack 전달 여부를 남기기 위함.
     // threadTs가 null이면(원본 발송 실패) 답글을 달 곳이 없으므로 원본 정보 + 분석을 합친 단독 메시지로 보낸다
-    public void replyAnalysis(Alert alert, String threadTs, String analysis) {
+    public Optional<String> replyAnalysis(Alert alert, String threadTs, String analysis) {
         String color = severityColor(alert.labels().get("severity"));
         if (threadTs == null) {
-            slackClient.send(SlackMessageRequest.of(color, formatMessage(alert, analysis)));
-            return;
+            return slackClient.send(SlackMessageRequest.of(color, formatMessage(alert, analysis)));
         }
-        slackClient.reply(threadTs, SlackMessageRequest.of(color, formatAnalysis(analysis)));
+        return slackClient.reply(threadTs, SlackMessageRequest.of(color, formatAnalysis(analysis)));
     }
 
     // 전략 미등록 또는 LLM 분석 실패 시에도 알람 자체는 원본 정보로라도 전달한다 -
     // slack_configs 제거 후 "분석 안 되면 Slack에 아예 안 뜸"이 되는 회귀를 막기 위함.
     // threadTs가 null이면(원본 발송 실패) 원본 정보를 포함한 단독 메시지로 보낸다.
-    public void replyWithoutAnalysis(Alert alert, String threadTs) {
+    public Optional<String> replyWithoutAnalysis(Alert alert, String threadTs) {
         String color = severityColor(alert.labels().get("severity"));
         if (threadTs == null) {
-            slackClient.send(SlackMessageRequest.of(color, formatMessageWithoutAnalysis(alert)));
-            return;
+            return slackClient.send(SlackMessageRequest.of(color, formatMessageWithoutAnalysis(alert)));
         }
-        slackClient.reply(threadTs, SlackMessageRequest.of(color, NO_ANALYSIS_TEXT));
+        return slackClient.reply(threadTs, SlackMessageRequest.of(color, NO_ANALYSIS_TEXT));
     }
 
-    public void notifyResolved(Alert alert) {
+    public Optional<String> notifyResolved(Alert alert) {
         String message = formatResolvedMessage(alert);
-        slackClient.send(SlackMessageRequest.of(COLOR_DEFAULT, message));
+        return slackClient.send(SlackMessageRequest.of(COLOR_DEFAULT, message));
     }
 
     // severity 라벨을 Slack attachment 색상(danger/warning/good)으로 변환
