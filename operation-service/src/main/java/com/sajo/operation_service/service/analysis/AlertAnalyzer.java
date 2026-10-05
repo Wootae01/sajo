@@ -122,11 +122,16 @@ public class AlertAnalyzer {
         }
 
         StructuredAnalysis structuredAnalysis = parse(response, alertname);
+        List<String> validationErrors = StructuredAnalysisValidator.validate(structuredAnalysis, candidates);
+        if (!validationErrors.isEmpty()) {
+            log.warn("LLM 응답이 판정 규칙을 어겼습니다(발송은 그대로 함). alertname={}, violations={}", alertname, validationErrors);
+        }
 
         ChatResponseMetadata metadata = chatResponse.getMetadata();
         return Optional.of(new AlertAnalysisResult(
                 response,
                 structuredAnalysis,
+                validationErrors,
                 AlertPromptBuilder.SYSTEM_PROMPT,
                 userPrompt,
                 metadata.getModel(),

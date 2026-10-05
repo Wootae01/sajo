@@ -206,6 +206,24 @@ class AlertAnalyzerTest {
     }
 
     @Test
+    @DisplayName("판정 규칙 위반(후보 누락 등)은 예외가 아니라 결과에 기록만 한다 - 발송은 그대로 하고 위반율을 측정하기 위함")
+    void analyze_ruleViolations_recordedNotThrown() {
+        // trading-service 알람의 후보 = trading-service, market-service, user-service, external-api, host
+        // (인프라 의존은 stub이 빈 목록) - VALID_JSON은 trading-service와 postgres만 판정한다
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
+
+        assertThat(result.validationErrors()).containsExactly(
+                "후보 누락: market-service, user-service, external-api, host",
+                "목록에 없는 후보: postgres"
+        );
+        assertThat(result.structuredAnalysis()).isNotNull();
+    }
+
+    @Test
     @DisplayName("LLM이 JSON을 ```json 코드블록으로 감싸 보내도 파싱한다")
     void analyze_jsonInCodeBlock_parses() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();

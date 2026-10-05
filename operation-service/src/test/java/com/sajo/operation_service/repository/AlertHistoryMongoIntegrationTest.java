@@ -74,7 +74,7 @@ class AlertHistoryMongoIntegrationTest {
     @DisplayName("저장한 이력을 다시 읽으면 중첩 스냅샷(라벨 맵, Instant, 토큰)이 그대로 복원된다")
     void recordAnalyzed_roundTripsThroughMongo() {
         AlertAnalysisResult result = new AlertAnalysisResult(
-                "분석 결과", null, "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
+                "분석 결과", null, List.of(), "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
 
         alertHistoryService.recordAnalyzed(alert("firing"), result, "1.1", "1.2");
 
