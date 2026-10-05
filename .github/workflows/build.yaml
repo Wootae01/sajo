@@ -69,6 +69,8 @@ jobs:
       - name: Build and test ${{ matrix.module }}
         run: ./gradlew :${{ matrix.module }}:build --parallel
 
+  # no-db = 워크플로가 서비스 컨테이너(Postgres/Mongo)를 띄워 주지 않는 모듈.
+  # 테스트에 DB가 필요하면 Testcontainers로 직접 띄운다(예: operation-service의 Mongo 통합 테스트) - 러너에 Docker 기본 제공
   build-no-db:
     runs-on: ubuntu-latest
     strategy:
