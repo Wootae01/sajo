@@ -2,6 +2,7 @@ package com.sajo.operation_service.service;
 
 import com.sajo.operation_service.config.AsyncConfig;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.when;
 
 // @Async 프록시가 실제로 적용돼야 웹훅 요청 스레드가 Slack 응답을 기다리지 않는다 - 단위 테스트(직접 new)로는
 // 확인할 수 없어서 AsyncConfig와 함께 스프링 컨텍스트를 띄워 검증한다.
-@SpringJUnitConfig({AsyncConfig.class, AlertReceiveService.class})
+@SpringJUnitConfig({AsyncConfig.class, AlertReceiveService.class, SimpleMeterRegistry.class})
 class AlertReceiveServiceAsyncTest {
 
     @Autowired

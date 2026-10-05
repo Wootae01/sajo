@@ -8,6 +8,7 @@ import com.sajo.operation_service.repository.AlertHistoryRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -15,7 +16,8 @@ import java.util.function.Supplier;
 
 // 알람 처리 이력 기록. 이력은 부가 기록이라 저장 실패가 알람 처리(Slack 발송)를 깨뜨리면 안 되므로
 // 모든 record 메서드는 예외를 밖으로 던지지 않는다 - 실패는 로그 + alert_history_save_failures_total로만 남긴다.
-// Slack 발송이 끝난 뒤에 호출되므로 저장이 느려도 알람 전달은 늦어지지 않는다(대신 그 스레드는 붙잡힘 - Mongo 타임아웃을 짧게 둔 이유).
+// 저장은 전용 풀(alertHistoryExecutor)에서 비동기로 한다 - Mongo 장애 시 저장 1건이 타임아웃(약 2초)까지 스레드를 붙잡는데,
+// 호출한 알람 처리 스레드(원본 발송 전용 alertNotifyExecutor 등)가 그 대기에 묶여 다음 알람 발송이 밀리지 않게 하기 위함.
 @Slf4j
 @Service
 public class AlertHistoryService {
@@ -30,19 +32,23 @@ public class AlertHistoryService {
                 .register(meterRegistry);
     }
 
+    @Async("alertHistoryExecutor")
     public void recordAnalyzed(Alert alert, AlertAnalysisResult result, String threadTs, String messageTs) {
         save(alert, () -> AlertHistory.analyzed(toSnapshot(alert), toSnapshot(result), threadTs, messageTs));
     }
 
+    @Async("alertHistoryExecutor")
     public void recordAnalysisSkipped(Alert alert, String threadTs, String messageTs) {
         save(alert, () -> AlertHistory.analysisSkipped(toSnapshot(alert), threadTs, messageTs));
     }
 
+    @Async("alertHistoryExecutor")
     public void recordAnalysisFailed(Alert alert, Exception cause, String threadTs, String messageTs) {
         String errorMessage = cause.getClass().getSimpleName() + ": " + cause.getMessage();
         save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), errorMessage, threadTs, messageTs));
     }
 
+    @Async("alertHistoryExecutor")
     public void recordResolved(Alert alert, String messageTs) {
         save(alert, () -> AlertHistory.resolved(toSnapshot(alert), messageTs));
     }
