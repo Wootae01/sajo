@@ -19,12 +19,17 @@ final class AlertPromptBuilder {
      * 제공된 알람, 메트릭, [Cause candidates]만 사용해서 원인을 판정하고 JSON으로 답해라. 모든 문자열 값은 한국어로 써라.
      *
      * [절차]
-     * 1. observations: 입력 지표에서 관찰된 사실을 수치와 함께 적는다. 해석은 넣지 않는다.
+     * 1. observations: 판정에 중요한 사실을 적는다. 정상 범위를 벗어난 지표는 수치와 함께 적고,
+     *    정상인 지표는 묶어서 한 줄로 적는다. 입력 지표를 하나씩 옮겨 적지 마라.
+     *    무엇이 원인인지는 여기 적지 말고 candidates의 reasoning에 적는다.
      * 2. candidates: [Cause candidates]에 있는 후보를 하나도 빠짐없이, 적힌 이름 그대로 하나씩 판정한다.
      *    목록에 없는 후보를 추가하지 마라.
      * 3. topCauses: LIKELY 또는 POSSIBLE로 판정한 후보 중 유력한 순서대로 최대 3개를 고른다.
      *    0번이 가장 유력하다. 해당하는 후보가 없으면 빈 배열로 둔다.
-     * 4. nextChecks: 메트릭만으로 확정할 수 없어서 사람이 추가로 확인해야 할 항목을 적는다.
+     * 4. nextChecks: topCauses의 순서대로, 원인마다 사람이 가장 먼저 확인할 것을 하나씩 적는다.
+     *    그 다음, 판정에 필요한데 입력에 없던 데이터(INSUFFICIENT_DATA, 결과 없는 쿼리)가 있으면
+     *    그 이유를 확인하는 항목을 하나 적는다.
+     *    이 알람과 입력 지표에 근거한 것만 적고, 어떤 알람에나 해당하는 일반적인 점검은 적지 마라.
      *
      * [verdict]
      * - LIKELY: 지표가 이 후보를 원인으로 가리킨다.
@@ -50,7 +55,11 @@ final class AlertPromptBuilder {
      * - UNKNOWN: 판단할 수 없다. verdict가 RULED_OUT이나 INSUFFICIENT_DATA면 UNKNOWN을 쓴다.
      *
      * [evidence]
-     * - metric에는 입력에서 대괄호로 표시된 지표 이름을, value에는 입력에 있는 수치를 그대로 옮겨라.
+     * - metric에는 입력에서 대괄호로 표시된 지표 이름을 옮겨라. 한 지표에 labels가 다른 줄이 여러 개면,
+     *   어느 줄인지 구분하는 라벨 값을 이름 뒤에 붙여라.
+     *   예: "[아웃바운드 호출 대상별 실패율(0~1, 5xx/무응답)] openapivts.koreainvestment.com"
+     * - value에는 입력 줄의 "value=" 뒤에 있는 숫자만 그대로 옮겨라. 예: "0.3333333333333333"
+     *   "labels=", "value=", 라벨 값을 value에 넣지 마라. 결과가 없으면 "데이터 없음", 조회에 실패했으면 "조회 실패"라고 써라.
      * - 단위를 바꾸거나 반올림하거나 직접 계산한 값을 쓰지 마라. 입력에 없는 수치를 만들지 마라.
      * - reasoning에서 입력 지표에 직접 드러나지 않은 내용은 추측이라고 밝혀라.
      *
@@ -68,12 +77,18 @@ final class AlertPromptBuilder {
             Write every string value in Korean.
 
             [Procedure]
-            1. observations: List the facts observed in the input metrics, with their values. Do not add interpretation.
+            1. observations: List the facts that matter for the judgment. State metrics outside the normal range
+               with their values, and group normal metrics together in one line. Do not copy the input metrics one by one.
+               Do not state what the cause is here; put that in the candidates' reasoning.
             2. candidates: Judge every candidate in [Cause candidates], one by one, without omitting any,
                using the name exactly as written. Do not add candidates that are not in the list.
             3. topCauses: From the candidates judged LIKELY or POSSIBLE, pick up to 3 in order of likelihood.
                Index 0 is the most likely. If there are none, leave it as an empty array.
-            4. nextChecks: List items a human should check further because metrics alone cannot confirm them.
+            4. nextChecks: In the order of topCauses, write the one thing a human should check first for each cause.
+               After that, if data needed for the judgment was missing from the input (INSUFFICIENT_DATA,
+               queries with no result), add one item to check why it was missing.
+               Only write checks grounded in this alert and the input metrics. Do not write generic checks
+               that would apply to any alert.
 
             [verdict]
             - LIKELY: The metrics point to this candidate as the cause.
@@ -101,7 +116,12 @@ final class AlertPromptBuilder {
             - UNKNOWN: Cannot be determined. Use UNKNOWN when the verdict is RULED_OUT or INSUFFICIENT_DATA.
 
             [evidence]
-            - For metric, copy the metric name shown in brackets in the input. For value, copy the number from the input as is.
+            - For metric, copy the metric name shown in brackets in the input. If a metric has several lines with
+              different labels, append the label value that identifies the line after the name.
+              Example: "[아웃바운드 호출 대상별 실패율(0~1, 5xx/무응답)] openapivts.koreainvestment.com"
+            - For value, copy only the number after "value=" in the input line, as is. Example: "0.3333333333333333"
+              Do not put "labels=", "value=", or label values in value. If there is no result, write "데이터 없음";
+              if the query failed, write "조회 실패".
             - Do not convert units, round, or use values you calculated yourself. Never invent numbers that are not in the input.
             - In reasoning, clearly mark anything not directly shown in the input metrics as a guess.
 

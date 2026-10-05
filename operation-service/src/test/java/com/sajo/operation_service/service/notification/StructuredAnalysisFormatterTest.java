@@ -15,18 +15,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class StructuredAnalysisFormatterTest {
 
-    private static CandidateVerdict candidate(String component, Verdict verdict, CauseCategory category) {
-        return new CandidateVerdict(component, verdict, category, List.of(new Evidence("지표", "1")), component + " 판정 이유");
+    private static CandidateVerdict candidate(String component, Verdict verdict, CauseCategory category, Evidence... evidence) {
+        return new CandidateVerdict(component, verdict, category, List.of(evidence), component + " 판정 이유");
     }
 
     @Test
-    @DisplayName("관찰 -> 유력 원인(순위, 판정) -> 배제/데이터 없음(이름만) -> 다음 확인 순서로 조립한다")
+    @DisplayName("유력 원인(순위, 판정, 이유, 근거) -> 배제/데이터 없음(이름만) -> 다음 확인 순서로 조립하고 관찰은 보여주지 않는다")
     void format_fullAnalysis() {
         StructuredAnalysis analysis = new StructuredAnalysis(
-                List.of("p99 지연시간 3.2초", "HikariCP 커넥션 대기 12"),
+                List.of("관찰은 Slack에 안 나간다"),
                 List.of(
-                        candidate("market-service", Verdict.POSSIBLE, CauseCategory.CPU),
-                        candidate("postgres", Verdict.LIKELY, CauseCategory.CONNECTION_EXHAUSTED),
+                        candidate("market-service", Verdict.POSSIBLE, CauseCategory.CPU,
+                                new Evidence("[CPU 사용률(0~1)]", "0.71")),
+                        candidate("postgres", Verdict.LIKELY, CauseCategory.CONNECTION_EXHAUSTED,
+                                new Evidence("[HikariCP 커넥션 대기(pending)]", "12"),
+                                new Evidence("[[의존 대상: postgres] Postgres 커넥션 사용률(0~1)]", "0.9512345")),
                         candidate("redis", Verdict.RULED_OUT, CauseCategory.UNKNOWN),
                         candidate("kafka", Verdict.RULED_OUT, CauseCategory.UNKNOWN),
                         candidate("mongo", Verdict.INSUFFICIENT_DATA, CauseCategory.UNKNOWN)
@@ -39,21 +42,53 @@ class StructuredAnalysisFormatterTest {
         );
 
         assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
-                *관찰*
-                • p99 지연시간 3.2초
-                • HikariCP 커넥션 대기 12
-
                 *유력 원인*
                 1. postgres / CONNECTION_EXHAUSTED (유력)
                     커넥션 대기 12
+                    근거: HikariCP 커넥션 대기 12 · Postgres 커넥션 사용률 0.951
                 2. market-service / CPU (가능)
                     CPU 사용률 상승
+                    근거: CPU 사용률 0.71
 
                 *배제*: redis, kafka
                 *데이터 없음*: mongo
 
                 *다음 확인*
                 • 장기 실행 트랜잭션 확인""");
+    }
+
+    @Test
+    @DisplayName("근거는 원인마다 최대 3개, 다음 확인은 최대 4개만 보여준다 - Slack에서만 자르고 이력에는 전부 남는다")
+    void format_limitsEvidenceAndNextChecks() {
+        StructuredAnalysis analysis = new StructuredAnalysis(
+                List.of(),
+                List.of(candidate("external-api", Verdict.LIKELY, CauseCategory.ERROR,
+                        new Evidence("[a]", "1"), new Evidence("[b]", "2"), new Evidence("[c]", "3"), new Evidence("[d]", "4"))),
+                List.of(new RankedCause("external-api", CauseCategory.ERROR, "이유")),
+                List.of("확인1", "확인2", "확인3", "확인4", "확인5")
+        );
+
+        String text = StructuredAnalysisFormatter.format(analysis);
+
+        assertThat(text).contains("근거: a 1 · b 2 · c 3").doesNotContain("d 4");
+        assertThat(text).contains("• 확인4").doesNotContain("확인5");
+    }
+
+    @Test
+    @DisplayName("근거 지표 이름은 의존 대상 접두어/대괄호/단위 설명을 지우고, 값은 유효숫자 3자리로 줄인다")
+    void shortMetricNameAndValue() {
+        assertThat(StructuredAnalysisFormatter.shortMetricName(
+                "[아웃바운드 호출 대상별 실패율(0~1, 5xx/무응답)] openapivts.koreainvestment.com"))
+                .isEqualTo("아웃바운드 호출 대상별 실패율 openapivts.koreainvestment.com");
+        assertThat(StructuredAnalysisFormatter.shortMetricName("[[의존 대상: redis] Redis 메모리 사용률(0~1)]"))
+                .isEqualTo("Redis 메모리 사용률");
+        assertThat(StructuredAnalysisFormatter.shortMetricName("[Heap(Old Gen) 사용률(0~1)]")).isEqualTo("Heap 사용률");
+
+        assertThat(StructuredAnalysisFormatter.shortValue("0.3333333333333333")).isEqualTo("0.333");
+        assertThat(StructuredAnalysisFormatter.shortValue("0.03637626953333329")).isEqualTo("0.0364");
+        assertThat(StructuredAnalysisFormatter.shortValue("1500")).isEqualTo("1500");
+        assertThat(StructuredAnalysisFormatter.shortValue("0")).isEqualTo("0");
+        assertThat(StructuredAnalysisFormatter.shortValue("데이터 없음")).isEqualTo("데이터 없음");
     }
 
     @Test
@@ -66,15 +101,15 @@ class StructuredAnalysisFormatterTest {
                 List.of()
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis))
-                .contains("*유력 원인*\n_유력 원인 없음_")
-                .contains("*배제*: redis")
-                .doesNotContain("*다음 확인*")
-                .doesNotContain("*데이터 없음*");
+        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
+                *유력 원인*
+                _유력 원인 없음_
+
+                *배제*: redis""");
     }
 
     @Test
-    @DisplayName("LLM이 필드를 빠뜨려 null이어도 예외 없이 그린다 - 형식 검증 전에도 Slack 발송이 깨지지 않게")
+    @DisplayName("LLM이 필드를 빠뜨려 null이어도 예외 없이 그린다")
     void format_nullFields() {
         StructuredAnalysis analysis = new StructuredAnalysis(null, null, null, null);
 
@@ -86,12 +121,12 @@ class StructuredAnalysisFormatterTest {
     @DisplayName("LLM 문장의 <, >, &는 Slack 링크/제어 문자로 해석되지 않게 이스케이프한다")
     void format_escapesSlackControlCharacters() {
         StructuredAnalysis analysis = new StructuredAnalysis(
-                List.of("p99 < 1s & 에러율 > 5%"),
                 List.of(),
                 List.of(),
-                List.of()
+                List.of(),
+                List.of("p99 < 1s & 에러율 > 5% 확인")
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).contains("• p99 &lt; 1s &amp; 에러율 &gt; 5%");
+        assertThat(StructuredAnalysisFormatter.format(analysis)).contains("• p99 &lt; 1s &amp; 에러율 &gt; 5% 확인");
     }
 }
