@@ -8,6 +8,8 @@ import com.sajo.operation_service.service.strategy.AlertDiagnosisStrategy;
 import com.sajo.operation_service.service.strategy.StrategyDiagnosis;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -50,7 +52,8 @@ public class AlertAnalyzer {
         this.alertnameStrategyRegistry = Map.copyOf(map);
     }
 
-    public Optional<String> analyze(AlertManagerWebhookRequest.Alert alert) {
+    // empty = 분석 대상이 아님(alertname 없음/전략 미등록), 예외 = 분석 시도했으나 실패
+    public Optional<AlertAnalysisResult> analyze(AlertManagerWebhookRequest.Alert alert) {
         String alertname = alert.labels().get("alertname");
 
         if (alertname == null) {
@@ -83,12 +86,35 @@ public class AlertAnalyzer {
         String userPrompt = AlertPromptBuilder.userPrompt(alert, diagnosis, hostAndDependencyMetrics);
         log.debug("LLM에 보낼 프롬프트. alertname={}\n{}", alertname, userPrompt);
 
-        String response = chatClient.prompt()
+        long startedAt = System.nanoTime();
+        ChatResponse chatResponse = chatClient.prompt()
                 .system(AlertPromptBuilder.SYSTEM_PROMPT)
                 .user(userPrompt)
                 .call()
-                .content();
+                .chatResponse();
+        long latencyMs = (System.nanoTime() - startedAt) / 1_000_000;
 
-        return Optional.ofNullable(response);
+        // 빈 응답은 "분석 대상 아님(empty)"이 아니라 분석 실패로 본다 - 이력에서 SKIPPED/FAILED를 구분하기 위함
+        String response = extractText(chatResponse);
+        if (response == null || response.isBlank()) {
+            throw new IllegalStateException("LLM 응답이 비어 있음. alertname=" + alertname);
+        }
+
+        ChatResponseMetadata metadata = chatResponse.getMetadata();
+        return Optional.of(new AlertAnalysisResult(
+                response,
+                AlertPromptBuilder.SYSTEM_PROMPT,
+                userPrompt,
+                metadata.getModel(),
+                TokenUsage.from(metadata.getUsage()),
+                latencyMs
+        ));
+    }
+
+    private String extractText(ChatResponse chatResponse) {
+        if (chatResponse == null || chatResponse.getResult() == null) {
+            return null;
+        }
+        return chatResponse.getResult().getOutput().getText();
     }
 }

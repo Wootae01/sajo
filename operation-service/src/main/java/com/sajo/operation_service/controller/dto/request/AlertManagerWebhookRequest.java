@@ -23,7 +23,8 @@ public record AlertManagerWebhookRequest(
             @NotNull Map<String, String> labels,       // alertname, application 등 - rules.yml의 labels + Prometheus 스크랩 라벨
             @NotNull Map<String, String> annotations,  // summary, description - rules.yml에 적어둔 그 텍스트
             @NotNull Instant startsAt,                 // 이 알람이 firing 시작한 시각 - PrometheusClient 조회 시점으로 그대로 씀
-            @NotNull Instant endsAt                     // 알람 resolved된 시각
+            @NotNull Instant endsAt,                    // 알람 resolved된 시각
+            String fingerprint                          // 라벨 집합 해시 - startsAt과 함께 같은 발생 건의 firing/resolved 이력을 잇는 키(검증은 안 함, 없어도 처리)
     ) {
         public boolean isFiring() {
             return "firing".equals(status);

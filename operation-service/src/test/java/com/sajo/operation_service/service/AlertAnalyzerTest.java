@@ -28,6 +28,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 
 import java.time.Instant;
 import java.util.List;
@@ -89,8 +94,59 @@ class AlertAnalyzerTest {
                 labels,
                 Map.of("summary", "요약", "description", "설명"),
                 Instant.parse("2026-09-17T03:00:00Z"),
-                Instant.parse("2026-09-17T03:00:00Z")
+                Instant.parse("2026-09-17T03:00:00Z"),
+                null
         );
+    }
+
+    private ChatResponse chatResponse(String text) {
+        return new ChatResponse(
+                List.of(new Generation(new AssistantMessage(text))),
+                ChatResponseMetadata.builder()
+                        .model("gpt-test")
+                        .usage(new DefaultUsage(100, 20, 120))
+                        .build()
+        );
+    }
+
+    // 호스트/의존관계/전략 조회는 빈 결과로 통과시키고 LLM 응답만 바꿔 끼우기 위한 공통 준비
+    private AlertManagerWebhookRequest.Alert stubDiagnosticsForHighCpu() {
+        AlertManagerWebhookRequest.Alert alert = createAlert(Map.of(
+                "alertname", "HighCpuUsage", "application", "trading-service"
+        ));
+        when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
+        when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
+        when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
+        return alert;
+    }
+
+    @Test
+    @DisplayName("분석 결과에 이력용 정보(프롬프트 전문, 모델, 토큰 사용량, 지연)를 함께 담는다")
+    void analyze_success_returnsResultWithAuditFields() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("분석 결과 텍스트"));
+
+        AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
+
+        assertThat(result.response()).isEqualTo("분석 결과 텍스트");
+        assertThat(result.systemPrompt()).isEqualTo(AlertPromptBuilder.SYSTEM_PROMPT);
+        assertThat(result.userPrompt()).contains("HighCpuUsage");
+        assertThat(result.model()).isEqualTo("gpt-test");
+        assertThat(result.tokenUsage()).isEqualTo(new TokenUsage(100, 20, 120));
+        assertThat(result.latencyMs()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("LLM 응답이 비어 있으면 empty(분석 대상 아님)가 아니라 예외(분석 실패)로 처리한다 - 이력에서 SKIPPED/FAILED 구분")
+    void analyze_blankLlmResponse_throwsInsteadOfEmpty() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("  "));
+
+        assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM 응답이 비어 있음");
     }
 
     @Test
@@ -107,12 +163,12 @@ class AlertAnalyzerTest {
                 .thenReturn(Map.of("[의존 대상: postgres] Postgres 커넥션 사용률(0~1)", dummy));
         when(appMetricsStrategy.diagnose(alert, alert.startsAt()))
                 .thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of("CPU 사용률(0~1)", dummy)));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().content())
-                .thenReturn("분석 결과 텍스트");
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("분석 결과 텍스트"));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
         verify(hostDiagnosticsService).collect(alert.startsAt());
         verify(dependencyMappingService).collect("trading-service", alert.startsAt());
         verify(appMetricsStrategy).diagnose(alert, alert.startsAt());
@@ -125,12 +181,12 @@ class AlertAnalyzerTest {
         PrometheusQueryResult dummy = PrometheusQueryResult.success("query", List.of());
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().content())
-                .thenReturn("분석 결과 텍스트");
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("분석 결과 텍스트"));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
         verify(appMetricsStrategy, never()).diagnose(any(), any());
         verifyNoInteractions(dependencyMappingService);
     }
@@ -145,12 +201,12 @@ class AlertAnalyzerTest {
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
         when(dependencyMappingService.collect("node", alert.startsAt())).thenReturn(Map.of());
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().content())
-                .thenReturn("분석 결과 텍스트");
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("분석 결과 텍스트"));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
         verify(appMetricsStrategy, never()).diagnose(any(), any());
     }
 
@@ -159,7 +215,7 @@ class AlertAnalyzerTest {
     void analyze_missingAlertnameLabel_skipsWithoutNpe() {
         AlertManagerWebhookRequest.Alert alert = createAlert(Map.of("application", "trading-service"));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
         assertThat(result).isEmpty();
         verify(appMetricsStrategy, never()).diagnose(any(), any());
@@ -173,7 +229,7 @@ class AlertAnalyzerTest {
                 "alertname", "TradingConsumerStalled", "application", "trading-service"
         ));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
         assertThat(result).isEmpty();
         verify(appMetricsStrategy, never()).diagnose(any(), any());
@@ -185,7 +241,7 @@ class AlertAnalyzerTest {
     void analyze_unmappedAlertnameWithoutApplicationLabel_skipsAnalysisEntirely() {
         AlertManagerWebhookRequest.Alert alert = createAlert(Map.of("alertname", "TradingConsumerStalled"));
 
-        Optional<String> result = alertAnalyzer.analyze(alert);
+        Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
         assertThat(result).isEmpty();
         verify(appMetricsStrategy, never()).diagnose(any(), any());
@@ -252,7 +308,7 @@ class AlertAnalyzerTest {
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
         when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().content())
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
                 .thenThrow(new RuntimeException("OpenAI API error"));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))

@@ -35,7 +35,8 @@ class AppMetricsStrategyTest {
                 labels,
                 Map.of("summary", "요약", "description", "설명"),
                 Instant.parse("2026-09-18T03:00:00Z"),
-                Instant.parse("2026-09-18T03:00:00Z")
+                Instant.parse("2026-09-18T03:00:00Z"),
+                null
         );
     }
 

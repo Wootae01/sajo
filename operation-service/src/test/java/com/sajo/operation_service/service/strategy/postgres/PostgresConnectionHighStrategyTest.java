@@ -33,7 +33,8 @@ class PostgresConnectionHighStrategyTest {
     void diagnose_delegatesToPostgresDiagnosticsServiceAtCurrentTime() {
         Instant time = Instant.parse("2026-09-18T03:00:00Z");
         AlertManagerWebhookRequest.Alert alert = new AlertManagerWebhookRequest.Alert(
-                "firing", Map.of("alertname", "PostgresConnectionsHigh", "application", "postgres"), Map.of(), time, time
+                "firing", Map.of("alertname", "PostgresConnectionsHigh", "application", "postgres"), Map.of(), time, time,
+                null
         );
         Map<String, PrometheusQueryResult> expected = Map.of(
                 "Postgres 커넥션 사용률(0~1)", PrometheusQueryResult.success("query", List.of())
