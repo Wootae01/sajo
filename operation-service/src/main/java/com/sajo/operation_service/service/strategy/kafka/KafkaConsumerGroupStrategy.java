@@ -1,7 +1,7 @@
 package com.sajo.operation_service.service.strategy.kafka;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertNames;
+import com.sajo.operation_service.service.strategy.AlertNames;
 import com.sajo.operation_service.service.diagnostics.kafka.KafkaDiagnosticsService;
 import com.sajo.operation_service.service.strategy.AlertDiagnosisStrategy;
 import com.sajo.operation_service.service.strategy.StrategyDiagnosis;

@@ -1,9 +1,11 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.history;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
 import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistoryEventType;
 import com.sajo.operation_service.repository.AlertHistoryRepository;
+import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.TokenUsage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

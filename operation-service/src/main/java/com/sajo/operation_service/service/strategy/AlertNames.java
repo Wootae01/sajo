@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.strategy;
 
 // rules.yml의 alert: 필드와 정확히 일치해야 하는 alertname 리터럴을 한 곳에 모은다 -
 // Alertmanager webhook이 이 문자열 그대로 보내오므로 완전히 없앨 수는 없지만,

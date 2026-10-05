@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.notification;
 
 import com.sajo.operation_service.client.SlackClient;
 import com.sajo.operation_service.client.dto.request.SlackMessageRequest;

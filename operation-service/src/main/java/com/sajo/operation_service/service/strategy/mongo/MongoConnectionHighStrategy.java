@@ -1,7 +1,7 @@
 package com.sajo.operation_service.service.strategy.mongo;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertNames;
+import com.sajo.operation_service.service.strategy.AlertNames;
 import com.sajo.operation_service.service.diagnostics.mongo.MongoDiagnosticsService;
 import com.sajo.operation_service.service.strategy.AlertDiagnosisStrategy;
 import com.sajo.operation_service.service.strategy.StrategyDiagnosis;

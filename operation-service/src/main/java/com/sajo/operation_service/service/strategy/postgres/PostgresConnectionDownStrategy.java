@@ -2,7 +2,7 @@ package com.sajo.operation_service.service.strategy.postgres;
 
 import com.sajo.operation_service.client.PrometheusQueryResult;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertNames;
+import com.sajo.operation_service.service.strategy.AlertNames;
 import com.sajo.operation_service.service.diagnostics.host.HostDiagnosticsService;
 import com.sajo.operation_service.service.diagnostics.postgres.PostgresDiagnosticsService;
 import com.sajo.operation_service.service.strategy.AlertDiagnosisStrategy;

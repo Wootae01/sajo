@@ -2,7 +2,7 @@ package com.sajo.operation_service.service.strategy.kafka;
 
 import com.sajo.operation_service.client.PrometheusQueryResult;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertNames;
+import com.sajo.operation_service.service.strategy.AlertNames;
 import com.sajo.operation_service.service.diagnostics.host.HostDiagnosticsService;
 import com.sajo.operation_service.service.diagnostics.kafka.KafkaDiagnosticsService;
 import com.sajo.operation_service.service.strategy.AlertDiagnosisStrategy;

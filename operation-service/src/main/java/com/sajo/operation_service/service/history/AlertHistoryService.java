@@ -1,10 +1,12 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.history;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest.Alert;
 import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistory.AlertSnapshot;
 import com.sajo.operation_service.document.AlertHistory.AnalysisSnapshot;
 import com.sajo.operation_service.repository.AlertHistoryRepository;
+import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.TokenUsage;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;

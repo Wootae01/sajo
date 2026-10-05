@@ -1,7 +1,6 @@
 package com.sajo.operation_service.service.strategy;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertNames;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;

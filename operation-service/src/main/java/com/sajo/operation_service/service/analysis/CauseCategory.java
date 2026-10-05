@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.analysis;
 
 // 원인 유형 분류 - 평가 시 정답 라벨과 그대로 비교하는 값이라, 항목을 추가/변경하면 기존 정답 라벨도 같이 맞춰야 한다.
 // 항목은 "현상" 기준이다. 배포/설정 변경 같은 "계기"는 섞지 않는다(배포 후 커넥션 고갈이면 CONNECTION_EXHAUSTED) -
