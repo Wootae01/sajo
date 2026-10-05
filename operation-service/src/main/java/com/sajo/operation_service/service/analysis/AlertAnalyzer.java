@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -22,6 +23,11 @@ import java.util.Optional;
 @Slf4j
 @Service
 public class AlertAnalyzer {
+
+    // 응답 JSON -> StructuredAnalysis. 프롬프트에 붙는 스키마와 같은 타입에서 만든다(AlertPromptBuilder.SYSTEM_PROMPT).
+    // ```json 코드블록으로 감싸 와도 벗겨내고 파싱한다. 상태가 없어서 여러 스레드가 같이 써도 된다.
+    private static final BeanOutputConverter<StructuredAnalysis> OUTPUT_CONVERTER =
+            new BeanOutputConverter<>(StructuredAnalysis.class);
 
     private final HostDiagnosticsService hostDiagnosticsService;
     private final DependencyMappingService dependencyMappingService;
@@ -103,15 +109,29 @@ public class AlertAnalyzer {
             throw new IllegalStateException("LLM 응답이 비어 있음. alertname=" + alertname);
         }
 
+        StructuredAnalysis structuredAnalysis = parse(response, alertname);
+
         ChatResponseMetadata metadata = chatResponse.getMetadata();
         return Optional.of(new AlertAnalysisResult(
                 response,
+                structuredAnalysis,
                 AlertPromptBuilder.SYSTEM_PROMPT,
                 userPrompt,
                 metadata.getModel(),
                 TokenUsage.from(metadata.getUsage()),
                 latencyMs
         ));
+    }
+
+    // 파싱 실패도 빈 응답과 같이 분석 실패로 본다. 실패 이력에는 예외 메시지만 남아서 원문 응답은 로그로 남긴다 -
+    // 형식이 왜 틀렸는지 봐야 프롬프트를 고칠 수 있다. (형식 검증과 재요청은 다음 단계에서 추가)
+    private StructuredAnalysis parse(String response, String alertname) {
+        try {
+            return OUTPUT_CONVERTER.convert(response);
+        } catch (RuntimeException e) {
+            log.warn("LLM 응답을 구조화 결과로 파싱하지 못했습니다. alertname={}\n{}", alertname, response);
+            throw new IllegalStateException("LLM 응답 파싱 실패. alertname=" + alertname, e);
+        }
     }
 
     private String extractText(ChatResponse chatResponse) {

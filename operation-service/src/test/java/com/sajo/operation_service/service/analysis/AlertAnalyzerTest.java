@@ -57,6 +57,30 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AlertAnalyzerTest {
 
+    private static final String VALID_JSON = """
+            {
+              "observations": ["trading-service CPU 사용률 0.92"],
+              "candidates": [
+                {
+                  "component": "trading-service",
+                  "evidence": [{"metric": "CPU 사용률(0~1)", "value": "0.92"}],
+                  "reasoning": "CPU가 포화됨",
+                  "verdict": "LIKELY",
+                  "category": "CPU"
+                },
+                {
+                  "component": "postgres",
+                  "evidence": [],
+                  "reasoning": "지표 정상",
+                  "verdict": "RULED_OUT",
+                  "category": "UNKNOWN"
+                }
+              ],
+              "topCauses": [{"component": "trading-service", "category": "CPU", "reasoning": "CPU 포화"}],
+              "nextChecks": ["스케줄러 실행 여부 확인"]
+            }
+            """;
+
     private HostDiagnosticsService hostDiagnosticsService;
     private DependencyMappingService dependencyMappingService;
     private ChatClient chatClient;
@@ -126,16 +150,72 @@ class AlertAnalyzerTest {
     void analyze_success_returnsResultWithAuditFields() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
         when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+                .thenReturn(chatResponse(VALID_JSON));
 
         AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
 
-        assertThat(result.response()).isEqualTo("분석 결과 텍스트");
+        assertThat(result.response()).isEqualTo(VALID_JSON);
         assertThat(result.systemPrompt()).isEqualTo(AlertPromptBuilder.SYSTEM_PROMPT);
         assertThat(result.userPrompt()).contains("HighCpuUsage");
         assertThat(result.model()).isEqualTo("gpt-test");
         assertThat(result.tokenUsage()).isEqualTo(new TokenUsage(100, 20, 120));
         assertThat(result.latencyMs()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("LLM 응답 JSON을 StructuredAnalysis로 파싱해 원문과 함께 담는다")
+    void analyze_validJson_parsesStructuredAnalysis() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
+
+        assertThat(analysis.observations()).containsExactly("trading-service CPU 사용률 0.92");
+        assertThat(analysis.candidates()).extracting(StructuredAnalysis.CandidateVerdict::verdict)
+                .containsExactly(StructuredAnalysis.Verdict.LIKELY, StructuredAnalysis.Verdict.RULED_OUT);
+        assertThat(analysis.candidates().get(0).evidence())
+                .containsExactly(new StructuredAnalysis.Evidence("CPU 사용률(0~1)", "0.92"));
+        assertThat(analysis.topCauses()).extracting(StructuredAnalysis.RankedCause::category)
+                .containsExactly(CauseCategory.CPU);
+        assertThat(analysis.nextChecks()).containsExactly("스케줄러 실행 여부 확인");
+    }
+
+    @Test
+    @DisplayName("LLM이 JSON을 ```json 코드블록으로 감싸 보내도 파싱한다")
+    void analyze_jsonInCodeBlock_parses() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("```json\n" + VALID_JSON + "```"));
+
+        StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
+
+        assertThat(analysis.topCauses()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("LLM 응답이 JSON이 아니면 분석 실패(예외)로 처리한다")
+    void analyze_notJson_throws() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse("1. 관찰된 사실: CPU가 높습니다"));
+
+        assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM 응답 파싱 실패");
+    }
+
+    @Test
+    @DisplayName("정의되지 않은 enum 값이 오면 분석 실패(예외)로 처리한다 - 채점에 쓰는 값이 틀어지지 않게")
+    void analyze_unknownEnumValue_throws() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        String unknownCategory = VALID_JSON.replace("\"category\": \"CPU\"", "\"category\": \"DEPLOYMENT\"");
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+                .thenReturn(chatResponse(unknownCategory));
+
+        assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM 응답 파싱 실패");
     }
 
     @Test
@@ -165,11 +245,11 @@ class AlertAnalyzerTest {
         when(appMetricsStrategy.diagnose(alert, alert.startsAt()))
                 .thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of("CPU 사용률(0~1)", dummy)));
         when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(hostDiagnosticsService).collect(alert.startsAt());
         verify(dependencyMappingService).collect("trading-service", alert.startsAt());
         verify(appMetricsStrategy).diagnose(alert, alert.startsAt());
@@ -183,11 +263,11 @@ class AlertAnalyzerTest {
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
         when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(appMetricsStrategy, never()).diagnose(any(), any());
         verifyNoInteractions(dependencyMappingService);
     }
@@ -203,11 +283,11 @@ class AlertAnalyzerTest {
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
         when(dependencyMappingService.collect("node", alert.startsAt())).thenReturn(Map.of());
         when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(appMetricsStrategy, never()).diagnose(any(), any());
     }
 

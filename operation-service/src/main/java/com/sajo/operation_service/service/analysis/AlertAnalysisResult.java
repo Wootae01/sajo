@@ -2,7 +2,8 @@ package com.sajo.operation_service.service.analysis;
 
 // LLM 분석 1회의 결과 - Slack에는 response만 보내고, 나머지는 이력(감사)용으로 함께 남긴다
 public record AlertAnalysisResult(
-        String response,
+        String response,                        // LLM 응답 원문(JSON 문자열) - 파싱 결과와 별개로 원문을 남겨 재검토할 수 있게 한다
+        StructuredAnalysis structuredAnalysis,  // response를 파싱한 결과
         String systemPrompt,
         String userPrompt,
         String model,

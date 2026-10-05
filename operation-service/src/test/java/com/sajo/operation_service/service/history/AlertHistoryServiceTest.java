@@ -51,7 +51,7 @@ class AlertHistoryServiceTest {
     @DisplayName("ANALYZED: 알람 스냅샷(조회용 라벨은 꺼내 두고 나머지는 맵 그대로) + 분석 정보 + Slack ts를 저장한다")
     void recordAnalyzed_savesAlertAnalysisAndSlackTs() {
         AlertAnalysisResult result = new AlertAnalysisResult(
-                "분석 결과", "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
+                "분석 결과", null, "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
 
         alertHistoryService.recordAnalyzed(alert("firing"), result, THREAD_TS, MESSAGE_TS);
 
@@ -75,7 +75,7 @@ class AlertHistoryServiceTest {
     @Test
     @DisplayName("토큰 사용량이 없으면(제공자가 안 줌) 토큰 필드는 null로 남긴다 - 0과 구분")
     void recordAnalyzed_withoutTokenUsage_leavesTokensNull() {
-        AlertAnalysisResult result = new AlertAnalysisResult("분석 결과", "system", "user", "gpt-test", null, 10L);
+        AlertAnalysisResult result = new AlertAnalysisResult("분석 결과", null, "system", "user", "gpt-test", null, 10L);
 
         alertHistoryService.recordAnalyzed(alert("firing"), result, THREAD_TS, MESSAGE_TS);
 

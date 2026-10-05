@@ -49,7 +49,7 @@ class AlertAnalysisAsyncProcessorTest {
     }
 
     private AlertAnalysisResult result(String response) {
-        return new AlertAnalysisResult(response, "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
+        return new AlertAnalysisResult(response, null, "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
     }
 
     @Test
