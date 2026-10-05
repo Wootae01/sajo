@@ -83,7 +83,10 @@ public class AlertAnalyzer {
             hostAndDependencyMetrics.putAll(dependencyMappingService.collect(target, time));
         }
 
-        String userPrompt = AlertPromptBuilder.userPrompt(alert, diagnosis, hostAndDependencyMetrics);
+        List<String> candidates = AnalysisCandidates.of(
+                target, target == null ? List.of() : dependencyMappingService.relatedTargets(target));
+
+        String userPrompt = AlertPromptBuilder.userPrompt(alert, diagnosis, hostAndDependencyMetrics, candidates);
         log.debug("LLM에 보낼 프롬프트. alertname={}\n{}", alertname, userPrompt);
 
         long startedAt = System.nanoTime();
