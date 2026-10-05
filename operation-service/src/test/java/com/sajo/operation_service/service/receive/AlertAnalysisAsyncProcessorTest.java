@@ -3,13 +3,16 @@ package com.sajo.operation_service.service.receive;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
 import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
 import com.sajo.operation_service.service.analysis.AlertAnalyzer;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
 import com.sajo.operation_service.service.analysis.TokenUsage;
 import com.sajo.operation_service.service.history.AlertHistoryService;
 import com.sajo.operation_service.service.notification.SlackNotifier;
+import com.sajo.operation_service.service.notification.StructuredAnalysisFormatter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,6 +33,9 @@ class AlertAnalysisAsyncProcessorTest {
 
     private static final String THREAD_TS = "1728000000.000100";
     private static final String MESSAGE_TS = "1728000000.000200";
+    private static final StructuredAnalysis ANALYSIS =
+            new StructuredAnalysis(List.of("CPU 사용률 0.92"), List.of(), List.of(), List.of());
+    private static final String ANALYSIS_TEXT = StructuredAnalysisFormatter.format(ANALYSIS);
 
     private final AlertAnalyzer alertAnalyzer = mock(AlertAnalyzer.class);
     private final SlackNotifier slackNotifier = mock(SlackNotifier.class);
@@ -49,7 +55,7 @@ class AlertAnalysisAsyncProcessorTest {
     }
 
     private AlertAnalysisResult result(String response) {
-        return new AlertAnalysisResult(response, null, "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
+        return new AlertAnalysisResult(response, ANALYSIS, "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
     }
 
     @Test
@@ -60,7 +66,7 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.analyze(alert, THREAD_TS);
 
-        verify(slackNotifier).replyAnalysis(alert, THREAD_TS, "분석 결과");
+        verify(slackNotifier).replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT);
     }
 
     @Test
@@ -71,7 +77,7 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.analyze(alert, null);
 
-        verify(slackNotifier).replyAnalysis(alert, null, "분석 결과");
+        verify(slackNotifier).replyAnalysis(alert, null, ANALYSIS_TEXT);
     }
 
     @Test
@@ -114,12 +120,12 @@ class AlertAnalysisAsyncProcessorTest {
         AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
         AlertAnalysisResult result = result("분석 결과");
         when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
-        when(slackNotifier.replyAnalysis(alert, THREAD_TS, "분석 결과")).thenReturn(Optional.of(MESSAGE_TS));
+        when(slackNotifier.replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT)).thenReturn(Optional.of(MESSAGE_TS));
 
         processor.analyze(alert, THREAD_TS);
 
         var inOrder = inOrder(slackNotifier, alertHistoryService);
-        inOrder.verify(slackNotifier).replyAnalysis(alert, THREAD_TS, "분석 결과");
+        inOrder.verify(slackNotifier).replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT);
         inOrder.verify(alertHistoryService).recordAnalyzed(alert, result, THREAD_TS, MESSAGE_TS);
     }
 
@@ -156,7 +162,7 @@ class AlertAnalysisAsyncProcessorTest {
         AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
         AlertAnalysisResult result = result("분석 결과");
         when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
-        when(slackNotifier.replyAnalysis(alert, null, "분석 결과")).thenReturn(Optional.empty());
+        when(slackNotifier.replyAnalysis(alert, null, ANALYSIS_TEXT)).thenReturn(Optional.empty());
 
         processor.analyze(alert, null);
 

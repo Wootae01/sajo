@@ -5,6 +5,7 @@ import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
 import com.sajo.operation_service.service.analysis.AlertAnalyzer;
 import com.sajo.operation_service.service.history.AlertHistoryService;
 import com.sajo.operation_service.service.notification.SlackNotifier;
+import com.sajo.operation_service.service.notification.StructuredAnalysisFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -57,7 +58,9 @@ public class AlertAnalysisAsyncProcessor {
                     alert.labels().get("application"),
                     result.response()
             );
-            String messageTs = slackNotifier.replyAnalysis(alert, threadTs, result.response()).orElse(null);
+            // Slack에는 LLM 원문(JSON)이 아니라 구조화 결과를 읽기 좋게 조립한 텍스트를 보낸다 - 원문은 이력에 남는다
+            String analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis());
+            String messageTs = slackNotifier.replyAnalysis(alert, threadTs, analysisText).orElse(null);
             alertHistoryService.recordAnalyzed(alert, result, threadTs, messageTs);
         } else {
             String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
