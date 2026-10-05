@@ -43,11 +43,14 @@ public class DependencyMappingService {
     private final MongoDiagnosticsService mongoDiagnosticsService;
     private final KafkaDiagnosticsService kafkaDiagnosticsService;
 
-    public Map<String, PrometheusQueryResult> collect(String target, Instant time) {
-        List<String> relatedTargets = DEPENDENCY_MAP.getOrDefault(target, List.of());
+    // 매핑에 없는 대상(예: node)이면 빈 목록 - LLM 원인 후보 목록(AnalysisCandidates)도 같은 표를 쓴다
+    public List<String> relatedTargets(String target) {
+        return DEPENDENCY_MAP.getOrDefault(target, List.of());
+    }
 
+    public Map<String, PrometheusQueryResult> collect(String target, Instant time) {
         Map<String, PrometheusQueryResult> metrics = new LinkedHashMap<>();
-        for (String relatedTarget : relatedTargets) {
+        for (String relatedTarget : relatedTargets(target)) {
             collectFor(relatedTarget, time)
                     .forEach((label, result) -> metrics.put("[의존 대상: " + relatedTarget + "] " + label, result));
         }

@@ -93,4 +93,14 @@ class DependencyMappingServiceTest {
         verifyNoInteractions(prometheusClient, diagnosticsService, redisDiagnosticsService, postgresDiagnosticsService,
                 mongoDiagnosticsService, kafkaDiagnosticsService);
     }
+
+    @Test
+    @DisplayName("relatedTargets는 조회 없이 매핑 표만 돌려주고, 매핑에 없는 대상이면 빈 목록이다")
+    void relatedTargets_returnsMappingWithoutQuerying() {
+        assertThat(dependencyMappingService.relatedTargets("market-service"))
+                .containsExactly("postgres", "redis", "kafka");
+        assertThat(dependencyMappingService.relatedTargets("node")).isEmpty();
+        verifyNoInteractions(prometheusClient, diagnosticsService, redisDiagnosticsService, postgresDiagnosticsService,
+                mongoDiagnosticsService, kafkaDiagnosticsService);
+    }
 }
