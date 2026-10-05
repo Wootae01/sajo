@@ -7,6 +7,12 @@ import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequ
 import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistoryEventType;
 import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.CauseCategory;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis.CandidateVerdict;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis.Evidence;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis.RankedCause;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis.Verdict;
 import com.sajo.operation_service.service.history.AlertHistoryService;
 import com.sajo.operation_service.service.analysis.TokenUsage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -71,10 +77,17 @@ class AlertHistoryMongoIntegrationTest {
     }
 
     @Test
-    @DisplayName("저장한 이력을 다시 읽으면 중첩 스냅샷(라벨 맵, Instant, 토큰)이 그대로 복원된다")
+    @DisplayName("저장한 이력을 다시 읽으면 중첩 스냅샷(라벨 맵, Instant, 토큰, 구조화 분석)이 그대로 복원된다")
     void recordAnalyzed_roundTripsThroughMongo() {
+        StructuredAnalysis structured = new StructuredAnalysis(
+                List.of("CPU 사용률 0.92"),
+                List.of(new CandidateVerdict("trading-service", Verdict.LIKELY, CauseCategory.CPU,
+                        List.of(new Evidence("CPU 사용률(0~1)", "0.92")), "CPU 포화")),
+                List.of(new RankedCause("trading-service", CauseCategory.CPU, "CPU 포화")),
+                List.of("스케줄러 확인")
+        );
         AlertAnalysisResult result = new AlertAnalysisResult(
-                "분석 결과", null, List.of(), "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
+                "분석 결과", structured, List.of("후보 누락: host"), "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
 
         alertHistoryService.recordAnalyzed(alert("firing"), result, "1.1", "1.2");
 
@@ -86,6 +99,8 @@ class AlertHistoryMongoIntegrationTest {
         assertThat(saved.getAlert().labels()).containsEntry("severity", "warning");
         assertThat(saved.getAlert().startsAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
         assertThat(saved.getAnalysis().totalTokens()).isEqualTo(120);
+        assertThat(saved.getAnalysis().structuredAnalysis()).isEqualTo(structured);
+        assertThat(saved.getAnalysis().validationErrors()).containsExactly("후보 누락: host");
         assertThat(saved.getMessageTs()).isEqualTo("1.2");
     }
 

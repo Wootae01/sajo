@@ -5,6 +5,7 @@ import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistoryEventType;
 import com.sajo.operation_service.repository.AlertHistoryRepository;
 import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
 import com.sajo.operation_service.service.analysis.TokenUsage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
@@ -51,8 +52,9 @@ class AlertHistoryServiceTest {
     @Test
     @DisplayName("ANALYZED: 알람 스냅샷(조회용 라벨은 꺼내 두고 나머지는 맵 그대로) + 분석 정보 + Slack ts를 저장한다")
     void recordAnalyzed_savesAlertAnalysisAndSlackTs() {
+        StructuredAnalysis structured = new StructuredAnalysis(List.of("관찰"), List.of(), List.of(), List.of());
         AlertAnalysisResult result = new AlertAnalysisResult(
-                "분석 결과", null, List.of(), "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
+                "분석 결과", structured, List.of("후보 누락: host"), "system", "user", "gpt-test", new TokenUsage(100, 20, 120), 1500L);
 
         alertHistoryService.recordAnalyzed(alert("firing"), result, THREAD_TS, MESSAGE_TS);
 
@@ -64,6 +66,8 @@ class AlertHistoryServiceTest {
         assertThat(saved.getAlert().severity()).isEqualTo("warning");
         assertThat(saved.getAlert().labels()).containsEntry("instance", "host:8080");
         assertThat(saved.getAnalysis().response()).isEqualTo("분석 결과");
+        assertThat(saved.getAnalysis().structuredAnalysis()).isEqualTo(structured);
+        assertThat(saved.getAnalysis().validationErrors()).containsExactly("후보 누락: host");
         assertThat(saved.getAnalysis().model()).isEqualTo("gpt-test");
         assertThat(saved.getAnalysis().totalTokens()).isEqualTo(120);
         assertThat(saved.getAnalysis().latencyMs()).isEqualTo(1500L);

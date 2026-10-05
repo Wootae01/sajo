@@ -1,5 +1,6 @@
 package com.sajo.operation_service.document;
 
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -8,6 +9,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 // operation-service가 받은 알람 1건을 어떻게 처리했는지(분석 여부, Slack 전달 여부) 남기는 이력.
@@ -89,8 +91,14 @@ public class AlertHistory {
     ) {
     }
 
+    // structuredAnalysis는 response(원문 JSON)를 파싱한 결과를 하위 문서로 그대로 둔다 - 평가 때 문자열을 다시 파싱하지 않고
+    // "analysis.structuredAnalysis.topCauses.0.component" 같은 필드로 바로 조회/집계하기 위함.
+    // StructuredAnalysis 타입을 그대로 쓰므로 필드/enum 이름을 바꾸면 이전 문서를 읽을 때 매핑이 깨질 수 있다(원문 response는 남아 있다).
+    // validationErrors: 판정 규칙 위반 목록(빈 목록 = 위반 없음) - 지시 위반율 측정용
     public record AnalysisSnapshot(
             String response,
+            StructuredAnalysis structuredAnalysis,
+            List<String> validationErrors,
             String systemPrompt,
             String userPrompt,
             String model,

@@ -86,6 +86,8 @@ public class AlertHistoryService {
         TokenUsage usage = result.tokenUsage();
         return new AnalysisSnapshot(
                 result.response(),
+                result.structuredAnalysis(),
+                result.validationErrors(),
                 result.systemPrompt(),
                 result.userPrompt(),
                 result.model(),
