@@ -1,6 +1,5 @@
 package com.sajo.operation_service.document;
 
-import com.sajo.operation_service.service.analysis.StructuredAnalysis;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -91,13 +90,12 @@ public class AlertHistory {
     ) {
     }
 
-    // structuredAnalysis는 response(원문 JSON)를 파싱한 결과를 하위 문서로 그대로 둔다 - 평가 때 문자열을 다시 파싱하지 않고
+    // structuredAnalysis는 response(원문 JSON)를 파싱한 결과를 하위 문서로 둔다 - 평가 때 문자열을 다시 파싱하지 않고
     // "analysis.structuredAnalysis.topCauses.0.component" 같은 필드로 바로 조회/집계하기 위함.
-    // StructuredAnalysis 타입을 그대로 쓰므로 필드/enum 이름을 바꾸면 이전 문서를 읽을 때 매핑이 깨질 수 있다(원문 response는 남아 있다).
     // validationErrors: 판정 규칙 위반 목록(빈 목록 = 위반 없음) - 지시 위반율 측정용
     public record AnalysisSnapshot(
             String response,
-            StructuredAnalysis structuredAnalysis,
+            StructuredAnalysisSnapshot structuredAnalysis,
             List<String> validationErrors,
             String systemPrompt,
             String userPrompt,
@@ -107,5 +105,32 @@ public class AlertHistory {
             Integer totalTokens,
             long latencyMs
     ) {
+    }
+
+    // LLM 응답 타입(service의 StructuredAnalysis)을 그대로 저장하지 않고 이력용 타입을 따로 둔다 -
+    // 응답 스키마는 프롬프트 실험 중에 자주 바뀌는데, 저장 형식이 같이 바뀌면 이전 문서를 읽을 때 매핑이 깨진다.
+    // 필드 이름은 응답과 같게 두고(조회 경로 유지), enum(verdict/category)은 문자열로 둔다 - enum 값을 지우거나
+    // 이름을 바꿔도 이전 문서는 그대로 읽힌다. 응답에 필드를 추가하면 AlertHistoryService의 매핑도 같이 고친다.
+    public record StructuredAnalysisSnapshot(
+            List<String> observations,
+            List<CandidateSnapshot> candidates,
+            List<RankedCauseSnapshot> topCauses,
+            List<String> nextChecks
+    ) {
+    }
+
+    public record CandidateSnapshot(
+            String component,
+            String verdict,
+            String category,
+            List<EvidenceSnapshot> evidence,
+            String reasoning
+    ) {
+    }
+
+    public record EvidenceSnapshot(String metric, String value) {
+    }
+
+    public record RankedCauseSnapshot(String component, String category, String reasoning) {
     }
 }

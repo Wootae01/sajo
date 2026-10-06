@@ -6,6 +6,10 @@ import com.sajo.operation_service.config.MongoIndexInitializer;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
 import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistoryEventType;
+import com.sajo.operation_service.document.AlertHistory.CandidateSnapshot;
+import com.sajo.operation_service.document.AlertHistory.EvidenceSnapshot;
+import com.sajo.operation_service.document.AlertHistory.RankedCauseSnapshot;
+import com.sajo.operation_service.document.AlertHistory.StructuredAnalysisSnapshot;
 import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
 import com.sajo.operation_service.service.analysis.CauseCategory;
 import com.sajo.operation_service.service.analysis.StructuredAnalysis;
@@ -99,7 +103,13 @@ class AlertHistoryMongoIntegrationTest {
         assertThat(saved.getAlert().labels()).containsEntry("severity", "warning");
         assertThat(saved.getAlert().startsAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
         assertThat(saved.getAnalysis().totalTokens()).isEqualTo(120);
-        assertThat(saved.getAnalysis().structuredAnalysis()).isEqualTo(structured);
+        assertThat(saved.getAnalysis().structuredAnalysis()).isEqualTo(new StructuredAnalysisSnapshot(
+                List.of("CPU 사용률 0.92"),
+                List.of(new CandidateSnapshot("trading-service", "LIKELY", "CPU",
+                        List.of(new EvidenceSnapshot("CPU 사용률(0~1)", "0.92")), "CPU 포화")),
+                List.of(new RankedCauseSnapshot("trading-service", "CPU", "CPU 포화")),
+                List.of("스케줄러 확인")
+        ));
         assertThat(saved.getAnalysis().validationErrors()).containsExactly("후보 누락: host");
         assertThat(saved.getMessageTs()).isEqualTo("1.2");
     }
@@ -153,5 +163,43 @@ class AlertHistoryMongoIntegrationTest {
             assertThat(elapsed).isLessThan(Duration.ofSeconds(5));
             assertThat(meterRegistry.get("alert_history_save_failures_total").counter().count()).isEqualTo(1.0);
         }
+    }
+
+    @Test
+    @DisplayName("구조화 분석은 응답과 같은 필드 경로에 enum 이름 문자열로 저장된다 - 평가 쿼리 경로가 유지된다")
+    void recordAnalyzed_storesStructuredAnalysisAtSamePaths() {
+        StructuredAnalysis structured = new StructuredAnalysis(
+                List.of(),
+                List.of(new CandidateVerdict("postgres", Verdict.LIKELY, CauseCategory.LOCK, List.of(), "락 대기")),
+                List.of(new RankedCause("postgres", CauseCategory.LOCK, "락 대기")),
+                List.of()
+        );
+        alertHistoryService.recordAnalyzed(alert("firing"), new AlertAnalysisResult(
+                "분석 결과", structured, List.of(), "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L), "1.1", "1.2");
+
+        List<Document> docs = mongoTemplate.getCollection("p_alert_histories")
+                .find(new Document("analysis.structuredAnalysis.topCauses.0.component", "postgres")
+                        .append("analysis.structuredAnalysis.candidates.0.verdict", "LIKELY")
+                        .append("analysis.structuredAnalysis.topCauses.0.category", "LOCK"))
+                .into(new ArrayList<>());
+
+        assertThat(docs).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("지금 enum에 없는 verdict/category 값이 든 이전 문서도 예외 없이 읽힌다 - 응답 스키마가 바뀌어도 이력 조회가 깨지지 않는다")
+    void legacyDocumentWithUnknownEnumValue_isReadable() {
+        Document candidate = new Document("component", "postgres").append("verdict", "WEAK")
+                .append("category", "REMOVED_CATEGORY").append("evidence", List.of()).append("reasoning", "이유");
+        mongoTemplate.getCollection("p_alert_histories").insertOne(new Document("eventType", "ANALYZED")
+                .append("analysis", new Document("response", "원문")
+                        .append("structuredAnalysis", new Document("candidates", List.of(candidate))
+                                .append("topCauses", List.of()))
+                        .append("latencyMs", 10L)));
+
+        List<AlertHistory> all = alertHistoryRepository.findAll();
+
+        assertThat(all).hasSize(1);
+        assertThat(all.getFirst().getAnalysis().structuredAnalysis().candidates().getFirst().verdict()).isEqualTo("WEAK");
     }
 }
