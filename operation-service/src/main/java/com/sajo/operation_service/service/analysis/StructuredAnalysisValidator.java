@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 // structured output이 강제하지 못하는 "내용" 규칙을 검사한다 - 스키마는 후보 이름이 문자열이라는 것까지만 보장해서
@@ -26,8 +27,23 @@ final class StructuredAnalysisValidator {
     // 빈 목록 = 위반 없음
     static List<String> validate(StructuredAnalysis analysis, List<String> expectedCandidates) {
         List<String> violations = new ArrayList<>();
-        List<CandidateVerdict> candidates = analysis.candidates() == null ? List.of() : analysis.candidates();
-        List<RankedCause> topCauses = analysis.topCauses() == null ? List.of() : analysis.topCauses();
+        List<CandidateVerdict> rawCandidates = analysis.candidates() == null ? List.of() : analysis.candidates();
+        List<RankedCause> rawTopCauses = analysis.topCauses() == null ? List.of() : analysis.topCauses();
+
+        // null 원소/component 없는 판정은 strict 스키마에선 나오지 않지만, 나오면 빼고 위반으로만 남긴다 -
+        // 검증은 기록만 하는 단계라 여기서 NPE가 나면 멀쩡한 나머지 판정까지 분석 실패로 처리된다
+        List<CandidateVerdict> candidates = rawCandidates.stream()
+                .filter(candidate -> candidate != null && candidate.component() != null)
+                .toList();
+        List<RankedCause> topCauses = rawTopCauses.stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (candidates.size() < rawCandidates.size()) {
+            violations.add("null이거나 component 없는 후보 판정 " + (rawCandidates.size() - candidates.size()) + "개");
+        }
+        if (topCauses.size() < rawTopCauses.size()) {
+            violations.add("topCauses에 null " + (rawTopCauses.size() - topCauses.size()) + "개");
+        }
 
         Map<String, Verdict> verdictByComponent = new HashMap<>();
         Set<String> duplicated = new LinkedHashSet<>();

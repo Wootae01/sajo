@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,6 +106,20 @@ class StructuredAnalysisValidatorTest {
                 "topCauses에 RULED_OUT로 판정한 후보: redis",
                 "topCauses에 INSUFFICIENT_DATA로 판정한 후보: host",
                 "topCauses에 판정 안 된 후보: kafka"
+        );
+    }
+
+    @Test
+    @DisplayName("null 원소나 component 없는 판정은 예외 없이 빼고 위반으로 남긴다 - 나머지 판정은 그대로 검사한다")
+    void validate_nullElements_recordedAsViolations() {
+        List<CandidateVerdict> candidates = new ArrayList<>(allJudged());
+        candidates.add(null);
+        candidates.add(judged(null, Verdict.LIKELY));
+        List<RankedCause> topCauses = Arrays.asList(ranked("market-service"), null);
+
+        assertThat(StructuredAnalysisValidator.validate(analysis(candidates, topCauses), EXPECTED)).containsExactly(
+                "null이거나 component 없는 후보 판정 2개",
+                "topCauses에 null 1개"
         );
     }
 }

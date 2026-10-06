@@ -42,19 +42,22 @@ public final class StructuredAnalysisFormatter {
     private StructuredAnalysisFormatter() {
     }
 
-    // 필드가 빠진 응답(null)도 빈 목록으로 보고 그린다 - Slack 발송이 NPE로 깨지지 않게 하기 위함
+    // 필드가 빠진 응답(null 목록/null 원소)도 빈 것으로 보고 그린다 - Slack 발송이 NPE로 깨지지 않게 하기 위함
     public static String format(StructuredAnalysis analysis) {
         if (analysis == null) {
             return "_분석 결과 없음_";
         }
         List<CandidateVerdict> candidates = orEmpty(analysis.candidates()).stream()
-                .filter(candidate -> candidate.component() != null)
+                .filter(candidate -> candidate != null && candidate.component() != null)
                 .toList();
         Map<String, CandidateVerdict> candidateByComponent = candidates.stream()
                 .collect(Collectors.toMap(CandidateVerdict::component, candidate -> candidate, (first, second) -> first));
+        List<RankedCause> topCauses = orEmpty(analysis.topCauses()).stream()
+                .filter(Objects::nonNull)
+                .toList();
 
         List<String> sections = new ArrayList<>();
-        sections.add(topCausesSection(orEmpty(analysis.topCauses()), candidateByComponent));
+        sections.add(topCausesSection(topCauses, candidateByComponent));
 
         List<String> verdictLines = new ArrayList<>();
         namesLine("배제", candidates, Verdict.RULED_OUT).ifPresent(verdictLines::add);
@@ -95,7 +98,7 @@ public final class StructuredAnalysisFormatter {
             return Optional.empty();
         }
         List<String> items = orEmpty(candidate.evidence()).stream()
-                .filter(evidence -> evidence.metric() != null && evidence.value() != null)
+                .filter(evidence -> evidence != null && evidence.metric() != null && evidence.value() != null)
                 .limit(MAX_EVIDENCE_PER_CAUSE)
                 .map(evidence -> shortMetricName(evidence.metric()) + " " + shortValue(evidence.value()))
                 .map(StructuredAnalysisFormatter::escape)

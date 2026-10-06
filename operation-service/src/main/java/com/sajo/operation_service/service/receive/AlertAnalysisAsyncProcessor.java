@@ -46,8 +46,7 @@ public class AlertAnalysisAsyncProcessor {
         } catch (Exception e) {
             log.error("알람 분석 실패. alertname={}, application={}",
                     alert.labels().get("alertname"), alert.labels().get("application"), e);
-            String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
-            alertHistoryService.recordAnalysisFailed(alert, e, threadTs, messageTs);
+            replyAnalysisFailed(alert, e, threadTs);
             return;
         }
 
@@ -59,12 +58,27 @@ public class AlertAnalysisAsyncProcessor {
                     result.response()
             );
             // Slack에는 LLM 원문(JSON)이 아니라 구조화 결과를 읽기 좋게 조립한 텍스트를 보낸다 - 원문은 이력에 남는다
-            String analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis());
+            // 조립 실패도 분석 실패와 같이 처리한다 - 여기서 예외가 밖으로 나가면 "분석 없음" 안내도 이력도 안 남는다
+            // (원문은 바로 위 info 로그에 있다)
+            String analysisText;
+            try {
+                analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis());
+            } catch (Exception e) {
+                log.error("분석 결과 Slack 메시지 조립 실패. alertname={}, application={}",
+                        alert.labels().get("alertname"), alert.labels().get("application"), e);
+                replyAnalysisFailed(alert, e, threadTs);
+                return;
+            }
             String messageTs = slackNotifier.replyAnalysis(alert, threadTs, analysisText).orElse(null);
             alertHistoryService.recordAnalyzed(alert, result, threadTs, messageTs);
         } else {
             String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
             alertHistoryService.recordAnalysisSkipped(alert, threadTs, messageTs);
         }
+    }
+
+    private void replyAnalysisFailed(AlertManagerWebhookRequest.Alert alert, Exception cause, String threadTs) {
+        String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
+        alertHistoryService.recordAnalysisFailed(alert, cause, threadTs, messageTs);
     }
 }

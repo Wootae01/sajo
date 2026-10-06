@@ -9,6 +9,7 @@ import com.sajo.operation_service.service.analysis.StructuredAnalysis.Verdict;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,5 +129,26 @@ class StructuredAnalysisFormatterTest {
         );
 
         assertThat(StructuredAnalysisFormatter.format(analysis)).contains("• p99 &lt; 1s &amp; 에러율 &gt; 5% 확인");
+    }
+
+    @Test
+    @DisplayName("후보/유력 원인/근거 목록에 null 원소가 섞여 있어도 예외 없이 나머지만 그린다")
+    void format_nullElements() {
+        StructuredAnalysis analysis = new StructuredAnalysis(
+                List.of(),
+                Arrays.asList(
+                        null,
+                        new CandidateVerdict("postgres", Verdict.LIKELY, CauseCategory.LOCK,
+                                Arrays.asList(null, new Evidence("[락 대기]", "3")), "락 대기")
+                ),
+                Arrays.asList(null, new RankedCause("postgres", CauseCategory.LOCK, "락 대기 3")),
+                List.of()
+        );
+
+        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
+                *유력 원인*
+                1. postgres / LOCK (유력)
+                    락 대기 3
+                    근거: 락 대기 3""");
     }
 }
