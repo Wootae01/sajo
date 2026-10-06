@@ -9,6 +9,7 @@
 # 사용법:
 #   bash loadtest/osiv/run.sh <KIS 지연 ms> [초당 요청 수(기본 40)] [유지 시간(기본 90s)]
 #   (측정 전 지연 없이 워밍업을 먼저 돌린다 - 길이는 WARMUP 환경변수, 기본 20s, 0이면 생략)
+#   (/accounts/me probe 속도는 PROBE_RATE 환경변수, 기본 1건/s. 예) PROBE_RATE=5 bash loadtest/osiv/run.sh 500)
 #   예) bash loadtest/osiv/run.sh 100
 #       bash loadtest/osiv/run.sh 500
 #       bash loadtest/osiv/run.sh 1000
@@ -24,6 +25,7 @@ set -euo pipefail
 DELAY_MS="${1:?KIS 지연(ms)을 첫 번째 인자로 지정하세요. 예) bash loadtest/osiv/run.sh 1000}"
 RATE="${2:-40}"
 DURATION="${3:-90s}"
+PROBE_RATE="${PROBE_RATE:-1}"
 USER_SERVICE_URL="${USER_SERVICE_URL:-http://localhost:8081}"
 MOCK_ADMIN_URL="${MOCK_ADMIN_URL:-http://localhost:8095/mock/admin}"
 
@@ -82,7 +84,7 @@ curl -sf -o /dev/null -X DELETE "$MOCK_ADMIN_URL/faults"
 WARMUP="${WARMUP:-20s}"
 if [[ "$WARMUP" != 0 ]]; then
     echo "워밍업 ${WARMUP} (KIS 지연 없음, 결과 미집계)..."
-    k6 run --quiet --no-summary -e RATE="$RATE" -e DURATION="$WARMUP" -e BASE_URL="$USER_SERVICE_URL" \
+    k6 run --quiet --no-summary -e RATE="$RATE" -e PROBE_RATE="$PROBE_RATE" -e DURATION="$WARMUP" -e BASE_URL="$USER_SERVICE_URL" \
         "$SCRIPT_DIR/deposit-osiv.js" > /dev/null 2>&1 || true
 fi
 
@@ -92,7 +94,7 @@ if [[ "$DELAY_MS" -gt 0 ]]; then
         -d "{\"api\":\"balance\",\"type\":\"DELAY\",\"delayMs\":$DELAY_MS}"
 fi
 
-echo "[조건] $(date '+%Y-%m-%d %H:%M:%S') / user-service=${USER_SERVICE_IMAGE} (CPU ${CPU_LIMIT}, 메모리 ${MEM_LIMIT}) / OSIV=${OSIV} / KIS 지연=${DELAY_MS}ms / 예수금 ${RATE}건/s × ${DURATION}"
+echo "[조건] $(date '+%Y-%m-%d %H:%M:%S') / user-service=${USER_SERVICE_IMAGE} (CPU ${CPU_LIMIT}, 메모리 ${MEM_LIMIT}) / OSIV=${OSIV} / KIS 지연=${DELAY_MS}ms / 예수금 ${RATE}건/s × ${DURATION} / probe ${PROBE_RATE}건/s"
 
 # user-service CPU/메모리 사용량 수집 (docker stats 1회 호출이 1초 이상 걸려 간격은 대략적)
 (
@@ -108,7 +110,7 @@ echo "[조건] $(date '+%Y-%m-%d %H:%M:%S') / user-service=${USER_SERVICE_IMAGE}
 STATS_PID=$!
 
 k6 run --quiet \
-    -e RATE="$RATE" -e DURATION="$DURATION" -e BASE_URL="$USER_SERVICE_URL" \
+    -e RATE="$RATE" -e PROBE_RATE="$PROBE_RATE" -e DURATION="$DURATION" -e BASE_URL="$USER_SERVICE_URL" \
     --summary-export "$RESULT_DIR/${RUN_NAME}_k6.json" \
     "$SCRIPT_DIR/deposit-osiv.js" || true
 
