@@ -601,7 +601,7 @@ class OrderQueryRepositoryTest {
 
         // then
         assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).getId())
+        assertThat(result.getContent().getFirst().getId())
                 .isEqualTo(matchedOrder.getId());
     }
 
@@ -1056,7 +1056,7 @@ class OrderQueryRepositoryTest {
 
         // then
         assertThat(result.getTotalElements()).isEqualTo(1);
-        assertThat(result.getContent().get(0).getUserId())
+        assertThat(result.getContent().getFirst().getUserId())
                 .isEqualTo(userId1);
     }
 
@@ -1108,10 +1108,10 @@ class OrderQueryRepositoryTest {
 
         // then
         assertThat(result.getTotalElements()).isEqualTo(1);
-        assertThat(result.getContent().get(0).getStatus())
+        assertThat(result.getContent().getFirst().getStatus())
                 .isEqualTo(OrderStatus.TIMEOUT);
 
-        assertThat(result.getContent().get(0).getFailureCode())
+        assertThat(result.getContent().getFirst().getFailureCode())
                 .isEqualTo("KIS_RECONCILIATION_EXHAUSTED");
     }
 

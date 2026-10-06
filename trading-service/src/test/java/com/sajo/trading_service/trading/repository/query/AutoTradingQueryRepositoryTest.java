@@ -74,7 +74,7 @@ class AutoTradingQueryRepositoryTest {
                 .isEqualTo(1);
 
         AutoTrading found =
-                result.getContent().get(0);
+                result.getContent().getFirst();
 
         assertThat(found.getUserId())
                 .isEqualTo(userId1);
