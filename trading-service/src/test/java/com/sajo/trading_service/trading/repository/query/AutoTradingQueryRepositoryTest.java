@@ -85,4 +85,115 @@ class AutoTradingQueryRepositoryTest {
         assertThat(found.getEnabled())
                 .isTrue();
     }
+
+    // existsByUserIdAndEnabledTrueAndDeletedAtIsNull은 user-service의 계좌 삭제 전 활성 거래 확인(active-status)에 쓰인다.
+    @Test
+    @DisplayName("사용자에게 켜진 자동매매가 있으면 활성 자동매매가 있는 것으로 판단한다")
+    void existsEnabledAutoTradingByUserId() {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        AutoTrading autoTrading = AutoTrading.create(
+                userId,
+                UUID.randomUUID(),
+                AutoTradingDirection.BOTH
+        );
+
+        autoTrading.update(
+                true,
+                null
+        );
+
+        autoTradingQueryRepository.saveAndFlush(autoTrading);
+
+        // when
+        boolean result =
+                autoTradingQueryRepository
+                        .existsByUserIdAndEnabledTrueAndDeletedAtIsNull(userId);
+
+        // then
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("사용자의 자동매매가 꺼져 있으면 활성 자동매매가 없는 것으로 판단한다")
+    void doesNotExistEnabledAutoTradingWhenDisabled() {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        // AutoTrading.create() 직후 enabled = false
+        autoTradingQueryRepository.saveAndFlush(
+                AutoTrading.create(
+                        userId,
+                        UUID.randomUUID(),
+                        AutoTradingDirection.BOTH
+                )
+        );
+
+        // when
+        boolean result =
+                autoTradingQueryRepository
+                        .existsByUserIdAndEnabledTrueAndDeletedAtIsNull(userId);
+
+        // then
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("논리 삭제된 켜진 자동매매는 활성 자동매매로 판단하지 않는다")
+    void doesNotExistEnabledAutoTradingWhenDeleted() {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        AutoTrading autoTrading = AutoTrading.create(
+                userId,
+                UUID.randomUUID(),
+                AutoTradingDirection.BOTH
+        );
+
+        autoTrading.update(
+                true,
+                null
+        );
+        autoTrading.softDelete(userId);
+
+        autoTradingQueryRepository.saveAndFlush(autoTrading);
+
+        // when
+        boolean result =
+                autoTradingQueryRepository
+                        .existsByUserIdAndEnabledTrueAndDeletedAtIsNull(userId);
+
+        // then
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 켜진 자동매매는 활성 자동매매로 판단하지 않는다")
+    void doesNotExistEnabledAutoTradingForOtherUser() {
+        // given
+        UUID targetUserId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+
+        AutoTrading autoTrading = AutoTrading.create(
+                otherUserId,
+                UUID.randomUUID(),
+                AutoTradingDirection.BOTH
+        );
+
+        autoTrading.update(
+                true,
+                null
+        );
+
+        autoTradingQueryRepository.saveAndFlush(autoTrading);
+
+        // when
+        boolean result =
+                autoTradingQueryRepository
+                        .existsByUserIdAndEnabledTrueAndDeletedAtIsNull(targetUserId);
+
+        // then
+        assertThat(result).isFalse();
+    }
 }

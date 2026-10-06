@@ -10,6 +10,8 @@ import com.sajo.trading_service.trading.repository.command.OrderCommandRepositor
 import com.sajo.trading_service.trading.repository.query.specification.OrderSpecifications;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -432,6 +434,93 @@ class OrderQueryRepositoryTest {
                 orderQueryRepository
                         .existsActiveOrderByAutoTradingId(autoTradingId);
 
+        assertThat(result).isFalse();
+    }
+
+    /*
+     * existsActiveOrderByUserId는 user-service의 계좌 삭제 전 활성 거래 확인(active-status)에 쓰인다.
+     * 주문은 REQUESTED로 커밋된 뒤(AFTER_COMMIT)에야 계좌 정보를 조회하므로,
+     * REQUESTED가 진행 중으로 잡혀야 "주문 커밋 → 삭제 확인" 순서의 경합에서 삭제가 막힌다.
+     */
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(
+            value = OrderStatus.class,
+            names = {"REQUESTED", "PROCESSING", "TIMEOUT", "ACCEPTED", "PARTIALLY_FILLED"}
+    )
+    @DisplayName("사용자에게 진행 중 상태의 주문이 있으면 진행 중 주문이 있는 것으로 판단한다")
+    void existsActiveOrderByUserId_activeStatus(OrderStatus status) {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        orderCommandRepository.saveAndFlush(
+                createOrderInStatus(userId, status)
+        );
+
+        // when
+        boolean result =
+                orderQueryRepository.existsActiveOrderByUserId(userId);
+
+        // then
+        assertThat(result).isTrue();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(
+            value = OrderStatus.class,
+            names = {"FILLED", "CANCELED", "FAILED", "PARTIALLY_FILLED_REJECTED"}
+    )
+    @DisplayName("사용자에게 종료된 주문만 있으면 진행 중 주문이 없는 것으로 판단한다")
+    void existsActiveOrderByUserId_terminalStatus(OrderStatus status) {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        orderCommandRepository.saveAndFlush(
+                createOrderInStatus(userId, status)
+        );
+
+        // when
+        boolean result =
+                orderQueryRepository.existsActiveOrderByUserId(userId);
+
+        // then
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 진행 중 주문은 진행 중 주문으로 판단하지 않는다")
+    void existsActiveOrderByUserId_otherUser() {
+        // given
+        UUID targetUserId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+
+        orderCommandRepository.saveAndFlush(
+                createOrderInStatus(otherUserId, OrderStatus.REQUESTED)
+        );
+
+        // when
+        boolean result =
+                orderQueryRepository.existsActiveOrderByUserId(targetUserId);
+
+        // then
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    @DisplayName("논리 삭제된 진행 중 주문은 사용자의 진행 중 주문으로 판단하지 않는다")
+    void existsActiveOrderByUserId_deleted() {
+        // given
+        UUID userId = UUID.randomUUID();
+
+        Order order = createOrderInStatus(userId, OrderStatus.REQUESTED);
+        order.softDelete(userId);
+
+        orderCommandRepository.saveAndFlush(order);
+
+        // when
+        boolean result =
+                orderQueryRepository.existsActiveOrderByUserId(userId);
+
+        // then
         assertThat(result).isFalse();
     }
 
@@ -1064,5 +1153,75 @@ class OrderQueryRepositoryTest {
         );
 
         return order;
+    }
+
+    // 도메인 상태 전이 메서드만으로 원하는 상태의 주문을 만든다.
+    // switch에 default가 없어서 OrderStatus가 추가되면 컴파일이 깨져, 진행 중/종료 분류를 다시 정하게 된다.
+    private Order createOrderInStatus(
+            UUID userId,
+            OrderStatus status
+    ) {
+        Order order = Order.create(
+                userId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "005930",
+                OrderType.BUY,
+                70_000L,
+                10
+        );
+
+        Order result = switch (status) {
+            case REQUESTED -> order;
+            case PROCESSING -> {
+                order.startProcessing();
+                yield order;
+            }
+            case TIMEOUT -> {
+                order.startProcessing();
+                order.timeout("KIS_TIMEOUT", "KIS 주문 응답 시간 초과");
+                yield order;
+            }
+            case ACCEPTED -> {
+                order.startProcessing();
+                order.accept("ORDER-001");
+                yield order;
+            }
+            case PARTIALLY_FILLED -> {
+                order.startProcessing();
+                order.accept("ORDER-001");
+                order.applyFill(3, 7);
+                yield order;
+            }
+            case FILLED -> {
+                order.startProcessing();
+                order.accept("ORDER-001");
+                order.applyFill(10, 0);
+                yield order;
+            }
+            case CANCELED -> {
+                order.startProcessing();
+                order.accept("ORDER-001");
+                order.cancel(0, 0);
+                yield order;
+            }
+            case FAILED -> {
+                order.startProcessing();
+                order.fail("KIS_ORDER_FAILED", "KIS 주문 실패");
+                yield order;
+            }
+            case PARTIALLY_FILLED_REJECTED -> {
+                order.startProcessing();
+                order.accept("ORDER-001");
+                order.applyFill(3, 7);
+                order.rejectRemaining(3, 0, 7);
+                yield order;
+            }
+        };
+
+        assertThat(result.getStatus()).isEqualTo(status);
+
+        return result;
     }
 }
