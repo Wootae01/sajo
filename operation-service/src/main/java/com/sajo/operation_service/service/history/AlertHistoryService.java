@@ -54,8 +54,18 @@ public class AlertHistoryService {
 
     @Async("alertHistoryExecutor")
     public void recordAnalysisFailed(Alert alert, Exception cause, String threadTs, String messageTs) {
-        String errorMessage = cause.getClass().getSimpleName() + ": " + cause.getMessage();
-        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), errorMessage, threadTs, messageTs));
+        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), null, errorMessage(cause), threadTs, messageTs));
+    }
+
+    // LLM 응답은 받았지만 Slack 메시지 조립에서 실패한 경우 - Slack에는 "분석 없음"이 갔으므로 상태는 ANALYSIS_FAILED로 두고
+    // (ANALYZED로 남기면 분석이 전달된 것처럼 보인다), 받은 분석 결과(원문/프롬프트/토큰)는 같이 남긴다
+    @Async("alertHistoryExecutor")
+    public void recordFormatFailed(Alert alert, AlertAnalysisResult result, Exception cause, String threadTs, String messageTs) {
+        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), toSnapshot(result), errorMessage(cause), threadTs, messageTs));
+    }
+
+    private static String errorMessage(Exception cause) {
+        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
     }
 
     @Async("alertHistoryExecutor")

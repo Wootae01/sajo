@@ -46,7 +46,8 @@ public class AlertAnalysisAsyncProcessor {
         } catch (Exception e) {
             log.error("알람 분석 실패. alertname={}, application={}",
                     alert.labels().get("alertname"), alert.labels().get("application"), e);
-            replyAnalysisFailed(alert, e, threadTs);
+            String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
+            alertHistoryService.recordAnalysisFailed(alert, e, threadTs, messageTs);
             return;
         }
 
@@ -58,15 +59,16 @@ public class AlertAnalysisAsyncProcessor {
                     result.response()
             );
             // Slack에는 LLM 원문(JSON)이 아니라 구조화 결과를 읽기 좋게 조립한 텍스트를 보낸다 - 원문은 이력에 남는다
-            // 조립 실패도 분석 실패와 같이 처리한다 - 여기서 예외가 밖으로 나가면 "분석 없음" 안내도 이력도 안 남는다
-            // (원문은 바로 위 info 로그에 있다)
+            // 조립 실패도 Slack에는 분석 실패와 같이 "분석 없음"을 보낸다 - 여기서 예외가 밖으로 나가면 안내도 이력도 안 남는다.
+            // 이력은 ANALYSIS_FAILED로 남기되 이미 받은 분석 결과(원문/토큰)는 같이 저장한다
             String analysisText;
             try {
                 analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis(), result.validationErrors());
             } catch (Exception e) {
                 log.error("분석 결과 Slack 메시지 조립 실패. alertname={}, application={}",
                         alert.labels().get("alertname"), alert.labels().get("application"), e);
-                replyAnalysisFailed(alert, e, threadTs);
+                String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
+                alertHistoryService.recordFormatFailed(alert, result, e, threadTs, messageTs);
                 return;
             }
             String messageTs = slackNotifier.replyAnalysis(alert, threadTs, analysisText).orElse(null);
@@ -75,10 +77,5 @@ public class AlertAnalysisAsyncProcessor {
             String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
             alertHistoryService.recordAnalysisSkipped(alert, threadTs, messageTs);
         }
-    }
-
-    private void replyAnalysisFailed(AlertManagerWebhookRequest.Alert alert, Exception cause, String threadTs) {
-        String messageTs = slackNotifier.replyWithoutAnalysis(alert, threadTs).orElse(null);
-        alertHistoryService.recordAnalysisFailed(alert, cause, threadTs, messageTs);
     }
 }

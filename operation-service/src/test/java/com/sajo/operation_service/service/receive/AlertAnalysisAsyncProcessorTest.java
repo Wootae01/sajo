@@ -172,11 +172,12 @@ class AlertAnalysisAsyncProcessorTest {
     }
 
     @Test
-    @DisplayName("분석 결과를 Slack 메시지로 조립하다 예외가 나면 분석 없음 안내를 보내고 ANALYSIS_FAILED 이력을 남긴다")
-    void analyze_formatThrows_repliesWithoutAnalysisAndRecordsFailed() {
+    @DisplayName("분석 결과를 Slack 메시지로 조립하다 예외가 나면 분석 없음 안내를 보내고, 받은 분석 결과와 함께 ANALYSIS_FAILED 이력을 남긴다")
+    void analyze_formatThrows_repliesWithoutAnalysisAndRecordsFormatFailedWithResult() {
         AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
         RuntimeException cause = new RuntimeException("조립 실패");
-        when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result("분석 결과")));
+        AlertAnalysisResult result = result("분석 결과");
+        when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
         when(slackNotifier.replyWithoutAnalysis(alert, null)).thenReturn(Optional.of(MESSAGE_TS));
 
         try (MockedStatic<StructuredAnalysisFormatter> formatter = mockStatic(StructuredAnalysisFormatter.class)) {
@@ -187,7 +188,9 @@ class AlertAnalysisAsyncProcessorTest {
 
         verify(slackNotifier, never()).replyAnalysis(any(), any(), any());
         verify(slackNotifier).replyWithoutAnalysis(alert, null);
-        verify(alertHistoryService).recordAnalysisFailed(alert, cause, null, MESSAGE_TS);
+        verify(alertHistoryService).recordFormatFailed(alert, result, cause, null, MESSAGE_TS);
+        verify(alertHistoryService, never()).recordAnalysisFailed(any(), any(), any(), any());
+        verify(alertHistoryService, never()).recordAnalyzed(any(), any(), any(), any());
     }
 
     @Test

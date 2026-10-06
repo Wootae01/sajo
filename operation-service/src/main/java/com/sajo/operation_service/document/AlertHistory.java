@@ -29,7 +29,9 @@ public class AlertHistory {
 
     private AlertSnapshot alert;
 
-    private AnalysisSnapshot analysis;  // ANALYZED일 때만
+    // ANALYZED일 때, 그리고 LLM 응답은 받았지만 Slack 메시지 조립에서 실패한 ANALYSIS_FAILED일 때(비용을 들인 응답/토큰을 잃지 않게).
+    // 그래서 ANALYSIS_FAILED는 analysis가 없으면 LLM 단계 실패, 있으면 조립 단계 실패다
+    private AnalysisSnapshot analysis;
 
     private String errorMessage;        // ANALYSIS_FAILED일 때만
 
@@ -68,8 +70,10 @@ public class AlertHistory {
         return new AlertHistory(AlertHistoryEventType.ANALYSIS_SKIPPED, alert, null, null, threadTs, messageTs);
     }
 
-    public static AlertHistory analysisFailed(AlertSnapshot alert, String errorMessage, String threadTs, String messageTs) {
-        return new AlertHistory(AlertHistoryEventType.ANALYSIS_FAILED, alert, null, errorMessage, threadTs, messageTs);
+    // analysis: LLM 단계 실패면 null, 조립 단계 실패면 받은 분석 결과
+    public static AlertHistory analysisFailed(
+            AlertSnapshot alert, AnalysisSnapshot analysis, String errorMessage, String threadTs, String messageTs) {
+        return new AlertHistory(AlertHistoryEventType.ANALYSIS_FAILED, alert, analysis, errorMessage, threadTs, messageTs);
     }
 
     public static AlertHistory resolved(AlertSnapshot alert, String messageTs) {

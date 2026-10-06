@@ -117,8 +117,28 @@ class AlertHistoryServiceTest {
         AlertHistory saved = captureInserted();
         assertThat(saved.getEventType()).isEqualTo(AlertHistoryEventType.ANALYSIS_FAILED);
         assertThat(saved.getErrorMessage()).isEqualTo("IllegalStateException: LLM 응답이 비어 있음");
+        assertThat(saved.getAnalysis()).isNull();
         assertThat(saved.getThreadTs()).isNull();
         assertThat(saved.getMessageTs()).isNull();
+    }
+
+    @Test
+    @DisplayName("Slack 조립 실패: 상태는 ANALYSIS_FAILED로 남기고, 이미 받은 분석 결과(원문/토큰/구조화 결과)를 원인 예외와 함께 저장한다")
+    void recordFormatFailed_savesAnalysisWithErrorMessage() {
+        StructuredAnalysis structured = new StructuredAnalysis(List.of("관찰"), List.of(), List.of(), List.of());
+
+        alertHistoryService.recordFormatFailed(
+                alert("firing"), analyzedResult(structured), new IllegalStateException("조립 실패"), THREAD_TS, MESSAGE_TS);
+
+        AlertHistory saved = captureInserted();
+        assertThat(saved.getEventType()).isEqualTo(AlertHistoryEventType.ANALYSIS_FAILED);
+        assertThat(saved.getErrorMessage()).isEqualTo("IllegalStateException: 조립 실패");
+        assertThat(saved.getAnalysis().response()).isEqualTo("분석 결과");
+        assertThat(saved.getAnalysis().totalTokens()).isEqualTo(3);
+        assertThat(saved.getAnalysis().structuredAnalysis())
+                .isEqualTo(new StructuredAnalysisSnapshot(List.of("관찰"), List.of(), List.of(), List.of()));
+        assertThat(saved.getThreadTs()).isEqualTo(THREAD_TS);
+        assertThat(saved.getMessageTs()).isEqualTo(MESSAGE_TS);
     }
 
     @Test
