@@ -51,7 +51,8 @@ final class StructuredAnalysisValidator {
             if (verdictByComponent.containsKey(candidate.component())) {
                 duplicated.add(candidate.component());
             }
-            verdictByComponent.put(candidate.component(), candidate.verdict());
+            // 중복 판정이면 첫 판정을 기준으로 한다 - Slack 포매터도 첫 판정으로 그리므로, 경고 문구가 본문과 어긋나지 않게 맞춘다
+            verdictByComponent.putIfAbsent(candidate.component(), candidate.verdict());
         }
 
         List<String> missing = expectedCandidates.stream()
