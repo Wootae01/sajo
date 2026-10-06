@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.analysis;
 
 import org.springframework.ai.chat.metadata.Usage;
 

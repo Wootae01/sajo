@@ -52,7 +52,7 @@ class DependencyMappingServiceTest {
         when(diagnosticsService.collect("user-service", time)).thenReturn(Map.of("CPU 사용률(0~1)", dummy));
         when(diagnosticsService.collect("market-service", time)).thenReturn(Map.of("CPU 사용률(0~1)", dummy));
 
-        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect("redis", time);
+        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect(dependencyMappingService.relatedTargets("redis"), time);
 
         assertThat(metrics).hasSize(2);
         assertThat(metrics).containsKeys(
@@ -71,7 +71,7 @@ class DependencyMappingServiceTest {
         when(mongoDiagnosticsService.collect(time)).thenReturn(Map.of("MongoDB 커넥션 사용률(0~1)", dummy));
         when(kafkaDiagnosticsService.collect(time)).thenReturn(Map.of("Kafka 브로커 수", dummy));
 
-        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect("trading-service", time);
+        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect(dependencyMappingService.relatedTargets("trading-service"), time);
 
         assertThat(metrics).hasSize(3);
         assertThat(metrics).containsKeys(
@@ -87,9 +87,19 @@ class DependencyMappingServiceTest {
     void collect_unmappedTarget_returnsEmptyWithoutQuerying() {
         Instant time = Instant.parse("2026-09-18T03:00:00Z");
 
-        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect("node", time);
+        Map<String, PrometheusQueryResult> metrics = dependencyMappingService.collect(dependencyMappingService.relatedTargets("node"), time);
 
         assertThat(metrics).isEmpty();
+        verifyNoInteractions(prometheusClient, diagnosticsService, redisDiagnosticsService, postgresDiagnosticsService,
+                mongoDiagnosticsService, kafkaDiagnosticsService);
+    }
+
+    @Test
+    @DisplayName("relatedTargets는 조회 없이 매핑 표만 돌려주고, 매핑에 없는 대상이면 빈 목록이다")
+    void relatedTargets_returnsMappingWithoutQuerying() {
+        assertThat(dependencyMappingService.relatedTargets("market-service"))
+                .containsExactly("postgres", "redis", "kafka");
+        assertThat(dependencyMappingService.relatedTargets("node")).isEmpty();
         verifyNoInteractions(prometheusClient, diagnosticsService, redisDiagnosticsService, postgresDiagnosticsService,
                 mongoDiagnosticsService, kafkaDiagnosticsService);
     }

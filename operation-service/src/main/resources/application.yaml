@@ -16,6 +16,11 @@ spring:
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
+      chat:
+        # 모델을 명시해 둔다 - 비워두면 Spring AI 기본값을 따라가서 라이브러리 업그레이드만으로 모델이 조용히 바뀐다.
+        # 분석 결과를 평가/비교할 때 "프롬프트를 바꿔서 좋아졌나, 모델이 바뀌어서 좋아졌나"를 구분할 수 없게 되므로 고정한다.
+        # (Spring AI 2.0.1 기본값도 gpt-5-mini라 지금 동작은 그대로다)
+        model: gpt-5-mini
 
   # 알람 이력 저장용. operation-service에게 Mongo는 부가 의존성이라 장애 시 빨리 포기해야 한다 -
   # 저장은 전용 풀(alertHistoryExecutor, 스레드 2개)에서 하므로, 기본값(서버 선택 30s, 소켓 무제한)이면 Mongo 장애 동안

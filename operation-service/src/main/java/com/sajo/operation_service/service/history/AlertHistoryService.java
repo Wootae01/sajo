@@ -1,10 +1,17 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.history;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest.Alert;
 import com.sajo.operation_service.document.AlertHistory;
 import com.sajo.operation_service.document.AlertHistory.AlertSnapshot;
 import com.sajo.operation_service.document.AlertHistory.AnalysisSnapshot;
+import com.sajo.operation_service.document.AlertHistory.CandidateSnapshot;
+import com.sajo.operation_service.document.AlertHistory.EvidenceSnapshot;
+import com.sajo.operation_service.document.AlertHistory.RankedCauseSnapshot;
+import com.sajo.operation_service.document.AlertHistory.StructuredAnalysisSnapshot;
 import com.sajo.operation_service.repository.AlertHistoryRepository;
+import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
+import com.sajo.operation_service.service.analysis.TokenUsage;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +19,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 // 알람 처리 이력 기록. 이력은 부가 기록이라 저장 실패가 알람 처리(Slack 발송)를 깨뜨리면 안 되므로
@@ -44,8 +54,18 @@ public class AlertHistoryService {
 
     @Async("alertHistoryExecutor")
     public void recordAnalysisFailed(Alert alert, Exception cause, String threadTs, String messageTs) {
-        String errorMessage = cause.getClass().getSimpleName() + ": " + cause.getMessage();
-        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), errorMessage, threadTs, messageTs));
+        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), null, errorMessage(cause), threadTs, messageTs));
+    }
+
+    // LLM 응답은 받았지만 Slack 메시지 조립에서 실패한 경우 - Slack에는 "분석 없음"이 갔으므로 상태는 ANALYSIS_FAILED로 두고
+    // (ANALYZED로 남기면 분석이 전달된 것처럼 보인다), 받은 분석 결과(원문/프롬프트/토큰)는 같이 남긴다
+    @Async("alertHistoryExecutor")
+    public void recordFormatFailed(Alert alert, AlertAnalysisResult result, Exception cause, String threadTs, String messageTs) {
+        save(alert, () -> AlertHistory.analysisFailed(toSnapshot(alert), toSnapshot(result), errorMessage(cause), threadTs, messageTs));
+    }
+
+    private static String errorMessage(Exception cause) {
+        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
     }
 
     @Async("alertHistoryExecutor")
@@ -84,6 +104,8 @@ public class AlertHistoryService {
         TokenUsage usage = result.tokenUsage();
         return new AnalysisSnapshot(
                 result.response(),
+                toSnapshot(result.structuredAnalysis()),
+                result.validationErrors(),
                 result.systemPrompt(),
                 result.userPrompt(),
                 result.model(),
@@ -92,5 +114,44 @@ public class AlertHistoryService {
                 usage == null ? null : usage.totalTokens(),
                 result.latencyMs()
         );
+    }
+
+    // 응답 타입 -> 이력용 타입. 받은 그대로 남기는 게 목적이라 null 목록/null 원소도 거르지 않고 그대로 옮긴다
+    private StructuredAnalysisSnapshot toSnapshot(StructuredAnalysis analysis) {
+        if (analysis == null) {
+            return null;
+        }
+        return new StructuredAnalysisSnapshot(
+                analysis.observations(),
+                mapAll(analysis.candidates(), candidate -> new CandidateSnapshot(
+                        candidate.component(),
+                        name(candidate.verdict()),
+                        name(candidate.category()),
+                        mapAll(candidate.evidence(), evidence -> new EvidenceSnapshot(evidence.metric(), evidence.value())),
+                        candidate.reasoning()
+                )),
+                mapAll(analysis.topCauses(), cause -> new RankedCauseSnapshot(
+                        cause.component(),
+                        name(cause.category()),
+                        cause.reasoning()
+                )),
+                analysis.nextChecks()
+        );
+    }
+
+    // List.stream().map().toList()는 null 원소에서 매퍼가 NPE를 내므로 직접 돈다
+    private static <T, R> List<R> mapAll(List<T> items, Function<T, R> mapper) {
+        if (items == null) {
+            return null;
+        }
+        List<R> mapped = new ArrayList<>(items.size());
+        for (T item : items) {
+            mapped.add(item == null ? null : mapper.apply(item));
+        }
+        return mapped;
+    }
+
+    private static String name(Enum<?> value) {
+        return value == null ? null : value.name();
     }
 }

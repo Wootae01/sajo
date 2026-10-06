@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.analysis;
 
 import com.sajo.operation_service.client.PrometheusQueryResult;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
@@ -9,6 +9,7 @@ import com.sajo.operation_service.service.diagnostics.kafka.KafkaDiagnosticsServ
 import com.sajo.operation_service.service.diagnostics.mongo.MongoDiagnosticsService;
 import com.sajo.operation_service.service.diagnostics.postgres.PostgresDiagnosticsService;
 import com.sajo.operation_service.service.diagnostics.redis.RedisDiagnosticsService;
+import com.sajo.operation_service.service.strategy.AlertNames;
 import com.sajo.operation_service.service.strategy.app.AppMetricsStrategy;
 import com.sajo.operation_service.service.strategy.kafka.KafkaBrokerDownStrategy;
 import com.sajo.operation_service.service.strategy.kafka.KafkaConsumerGroupStrategy;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -33,6 +35,9 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.openai.OpenAiChatModel.ResponseFormat;
+import org.springframework.ai.openai.OpenAiChatOptions;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,8 +50,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -55,6 +62,32 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AlertAnalyzerTest {
+
+    private static final List<String> TRADING_DEPENDENCIES = List.of("postgres", "mongo", "kafka");
+
+    private static final String VALID_JSON = """
+            {
+              "observations": ["trading-service CPU 사용률 0.92"],
+              "candidates": [
+                {
+                  "component": "trading-service",
+                  "evidence": [{"metric": "CPU 사용률(0~1)", "value": "0.92"}],
+                  "reasoning": "CPU가 포화됨",
+                  "verdict": "LIKELY",
+                  "category": "CPU"
+                },
+                {
+                  "component": "postgres",
+                  "evidence": [],
+                  "reasoning": "지표 정상",
+                  "verdict": "RULED_OUT",
+                  "category": "UNKNOWN"
+                }
+              ],
+              "topCauses": [{"component": "trading-service", "category": "CPU", "reasoning": "CPU 포화"}],
+              "nextChecks": ["스케줄러 실행 여부 확인"]
+            }
+            """;
 
     private HostDiagnosticsService hostDiagnosticsService;
     private DependencyMappingService dependencyMappingService;
@@ -115,7 +148,7 @@ class AlertAnalyzerTest {
                 "alertname", "HighCpuUsage", "application", "trading-service"
         ));
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
-        when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
+        when(dependencyMappingService.collect(anyList(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
         return alert;
     }
@@ -124,12 +157,12 @@ class AlertAnalyzerTest {
     @DisplayName("분석 결과에 이력용 정보(프롬프트 전문, 모델, 토큰 사용량, 지연)를 함께 담는다")
     void analyze_success_returnsResultWithAuditFields() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
 
         AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
 
-        assertThat(result.response()).isEqualTo("분석 결과 텍스트");
+        assertThat(result.response()).isEqualTo(VALID_JSON);
         assertThat(result.systemPrompt()).isEqualTo(AlertPromptBuilder.SYSTEM_PROMPT);
         assertThat(result.userPrompt()).contains("HighCpuUsage");
         assertThat(result.model()).isEqualTo("gpt-test");
@@ -138,10 +171,103 @@ class AlertAnalyzerTest {
     }
 
     @Test
+    @DisplayName("OpenAI structured output(strict, StructuredAnalysis 스키마)으로 요청한다")
+    void analyze_requestsStructuredOutputWithSchema() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        alertAnalyzer.analyze(alert);
+
+        ArgumentCaptor<OpenAiChatOptions.Builder> captor = ArgumentCaptor.forClass(OpenAiChatOptions.Builder.class);
+        // deep stub이라 위 when(...)의 체인도 options() 호출로 집계된다 - 마지막 값(실제 analyze 호출)을 본다
+        verify(chatClient.prompt().system(anyString()).user(anyString()), atLeastOnce()).options(captor.capture());
+        ResponseFormat responseFormat = captor.getValue().build().getResponseFormat();
+        assertThat(responseFormat.getType()).isEqualTo(ResponseFormat.Type.JSON_SCHEMA);
+        assertThat(responseFormat.getStrict()).isTrue();
+        assertThat(responseFormat.getJsonSchema())
+                .isEqualTo(new BeanOutputConverter<>(StructuredAnalysis.class).getJsonSchema());
+    }
+
+    @Test
+    @DisplayName("LLM 응답 JSON을 StructuredAnalysis로 파싱해 원문과 함께 담는다")
+    void analyze_validJson_parsesStructuredAnalysis() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
+
+        assertThat(analysis.observations()).containsExactly("trading-service CPU 사용률 0.92");
+        assertThat(analysis.candidates()).extracting(StructuredAnalysis.CandidateVerdict::verdict)
+                .containsExactly(StructuredAnalysis.Verdict.LIKELY, StructuredAnalysis.Verdict.RULED_OUT);
+        assertThat(analysis.candidates().get(0).evidence())
+                .containsExactly(new StructuredAnalysis.Evidence("CPU 사용률(0~1)", "0.92"));
+        assertThat(analysis.topCauses()).extracting(StructuredAnalysis.RankedCause::category)
+                .containsExactly(CauseCategory.CPU);
+        assertThat(analysis.nextChecks()).containsExactly("스케줄러 실행 여부 확인");
+    }
+
+    @Test
+    @DisplayName("판정 규칙 위반(후보 누락 등)은 예외가 아니라 결과에 기록만 한다 - 발송은 그대로 하고 위반율을 측정하기 위함")
+    void analyze_ruleViolations_recordedNotThrown() {
+        // trading-service 알람의 후보 = trading-service, market-service, user-service, external-api, host
+        // (인프라 의존은 stub이 빈 목록) - VALID_JSON은 trading-service와 postgres만 판정한다
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
+
+        AlertAnalysisResult result = alertAnalyzer.analyze(alert).orElseThrow();
+
+        assertThat(result.validationErrors()).containsExactly(
+                "후보 누락: market-service, user-service, external-api, host",
+                "목록에 없는 후보: postgres"
+        );
+        assertThat(result.structuredAnalysis()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("LLM이 JSON을 ```json 코드블록으로 감싸 보내도 파싱한다")
+    void analyze_jsonInCodeBlock_parses() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse("```json\n" + VALID_JSON + "```"));
+
+        StructuredAnalysis analysis = alertAnalyzer.analyze(alert).orElseThrow().structuredAnalysis();
+
+        assertThat(analysis.topCauses()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("LLM 응답이 JSON이 아니면 분석 실패(예외)로 처리한다")
+    void analyze_notJson_throws() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse("1. 관찰된 사실: CPU가 높습니다"));
+
+        assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM 응답 파싱 실패");
+    }
+
+    @Test
+    @DisplayName("정의되지 않은 enum 값이 오면 분석 실패(예외)로 처리한다 - 채점에 쓰는 값이 틀어지지 않게")
+    void analyze_unknownEnumValue_throws() {
+        AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
+        String unknownCategory = VALID_JSON.replace("\"category\": \"CPU\"", "\"category\": \"DEPLOYMENT\"");
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(unknownCategory));
+
+        assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM 응답 파싱 실패");
+    }
+
+    @Test
     @DisplayName("LLM 응답이 비어 있으면 empty(분석 대상 아님)가 아니라 예외(분석 실패)로 처리한다 - 이력에서 SKIPPED/FAILED 구분")
     void analyze_blankLlmResponse_throwsInsteadOfEmpty() {
         AlertManagerWebhookRequest.Alert alert = stubDiagnosticsForHighCpu();
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse("  "));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))
@@ -159,18 +285,22 @@ class AlertAnalyzerTest {
                 "query", List.of(new PrometheusQueryResult.Series(Map.of(), "0.92")));
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(dependencyMappingService.collect("trading-service", alert.startsAt()))
+        when(dependencyMappingService.relatedTargets("trading-service")).thenReturn(TRADING_DEPENDENCIES);
+        when(dependencyMappingService.collect(TRADING_DEPENDENCIES, alert.startsAt()))
                 .thenReturn(Map.of("[의존 대상: postgres] Postgres 커넥션 사용률(0~1)", dummy));
         when(appMetricsStrategy.diagnose(alert, alert.startsAt()))
                 .thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of("CPU 사용률(0~1)", dummy)));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(hostDiagnosticsService).collect(alert.startsAt());
-        verify(dependencyMappingService).collect("trading-service", alert.startsAt());
+        verify(dependencyMappingService).collect(TRADING_DEPENDENCIES, alert.startsAt());
+        // 지표를 모은 의존 대상과 같은 목록이 원인 후보에도 들어간다
+        assertThat(result.get().userPrompt()).contains(
+                "[Cause candidates]\ntrading-service, postgres, mongo, kafka, market-service, user-service, external-api, host");
         verify(appMetricsStrategy).diagnose(alert, alert.startsAt());
     }
 
@@ -181,12 +311,12 @@ class AlertAnalyzerTest {
         PrometheusQueryResult dummy = PrometheusQueryResult.success("query", List.of());
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(appMetricsStrategy, never()).diagnose(any(), any());
         verifyNoInteractions(dependencyMappingService);
     }
@@ -200,13 +330,13 @@ class AlertAnalyzerTest {
         PrometheusQueryResult dummy = PrometheusQueryResult.success("query", List.of());
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(dependencyMappingService.collect("node", alert.startsAt())).thenReturn(Map.of());
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
-                .thenReturn(chatResponse("분석 결과 텍스트"));
+        when(dependencyMappingService.collect(List.of(), alert.startsAt())).thenReturn(Map.of());
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
+                .thenReturn(chatResponse(VALID_JSON));
 
         Optional<AlertAnalysisResult> result = alertAnalyzer.analyze(alert);
 
-        assertThat(result).map(AlertAnalysisResult::response).contains("분석 결과 텍스트");
+        assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(appMetricsStrategy, never()).diagnose(any(), any());
     }
 
@@ -306,9 +436,9 @@ class AlertAnalyzerTest {
         ));
 
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
-        when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
+        when(dependencyMappingService.collect(anyList(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().chatResponse())
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenThrow(new RuntimeException("OpenAI API error"));
 
         assertThatThrownBy(() -> alertAnalyzer.analyze(alert))

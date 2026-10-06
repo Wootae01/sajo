@@ -1,4 +1,4 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.history;
 
 import com.sajo.operation_service.config.AsyncConfig;
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;

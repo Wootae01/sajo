@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 // operation-service가 받은 알람 1건을 어떻게 처리했는지(분석 여부, Slack 전달 여부) 남기는 이력.
@@ -28,7 +29,9 @@ public class AlertHistory {
 
     private AlertSnapshot alert;
 
-    private AnalysisSnapshot analysis;  // ANALYZED일 때만
+    // ANALYZED일 때, 그리고 LLM 응답은 받았지만 Slack 메시지 조립에서 실패한 ANALYSIS_FAILED일 때(비용을 들인 응답/토큰을 잃지 않게).
+    // 그래서 ANALYSIS_FAILED는 analysis가 없으면 LLM 단계 실패, 있으면 조립 단계 실패다
+    private AnalysisSnapshot analysis;
 
     private String errorMessage;        // ANALYSIS_FAILED일 때만
 
@@ -67,8 +70,10 @@ public class AlertHistory {
         return new AlertHistory(AlertHistoryEventType.ANALYSIS_SKIPPED, alert, null, null, threadTs, messageTs);
     }
 
-    public static AlertHistory analysisFailed(AlertSnapshot alert, String errorMessage, String threadTs, String messageTs) {
-        return new AlertHistory(AlertHistoryEventType.ANALYSIS_FAILED, alert, null, errorMessage, threadTs, messageTs);
+    // analysis: LLM 단계 실패면 null, 조립 단계 실패면 받은 분석 결과
+    public static AlertHistory analysisFailed(
+            AlertSnapshot alert, AnalysisSnapshot analysis, String errorMessage, String threadTs, String messageTs) {
+        return new AlertHistory(AlertHistoryEventType.ANALYSIS_FAILED, alert, analysis, errorMessage, threadTs, messageTs);
     }
 
     public static AlertHistory resolved(AlertSnapshot alert, String messageTs) {
@@ -89,8 +94,13 @@ public class AlertHistory {
     ) {
     }
 
+    // structuredAnalysis는 response(원문 JSON)를 파싱한 결과를 하위 문서로 둔다 - 평가 때 문자열을 다시 파싱하지 않고
+    // "analysis.structuredAnalysis.topCauses.0.component" 같은 필드로 바로 조회/집계하기 위함.
+    // validationErrors: 판정 규칙 위반 목록(빈 목록 = 위반 없음) - 지시 위반율 측정용
     public record AnalysisSnapshot(
             String response,
+            StructuredAnalysisSnapshot structuredAnalysis,
+            List<String> validationErrors,
             String systemPrompt,
             String userPrompt,
             String model,
@@ -99,5 +109,32 @@ public class AlertHistory {
             Integer totalTokens,
             long latencyMs
     ) {
+    }
+
+    // LLM 응답 타입(service의 StructuredAnalysis)을 그대로 저장하지 않고 이력용 타입을 따로 둔다 -
+    // 응답 스키마는 프롬프트 실험 중에 자주 바뀌는데, 저장 형식이 같이 바뀌면 이전 문서를 읽을 때 매핑이 깨진다.
+    // 필드 이름은 응답과 같게 두고(조회 경로 유지), enum(verdict/category)은 문자열로 둔다 - enum 값을 지우거나
+    // 이름을 바꿔도 이전 문서는 그대로 읽힌다. 응답에 필드를 추가하면 AlertHistoryService의 매핑도 같이 고친다.
+    public record StructuredAnalysisSnapshot(
+            List<String> observations,
+            List<CandidateSnapshot> candidates,
+            List<RankedCauseSnapshot> topCauses,
+            List<String> nextChecks
+    ) {
+    }
+
+    public record CandidateSnapshot(
+            String component,
+            String verdict,
+            String category,
+            List<EvidenceSnapshot> evidence,
+            String reasoning
+    ) {
+    }
+
+    public record EvidenceSnapshot(String metric, String value) {
+    }
+
+    public record RankedCauseSnapshot(String component, String category, String reasoning) {
     }
 }

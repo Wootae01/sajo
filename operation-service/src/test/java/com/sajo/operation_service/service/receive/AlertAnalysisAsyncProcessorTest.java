@@ -1,10 +1,19 @@
-package com.sajo.operation_service.service;
+package com.sajo.operation_service.service.receive;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
+import com.sajo.operation_service.service.analysis.AlertAnalysisResult;
+import com.sajo.operation_service.service.analysis.AlertAnalyzer;
+import com.sajo.operation_service.service.analysis.StructuredAnalysis;
+import com.sajo.operation_service.service.analysis.TokenUsage;
+import com.sajo.operation_service.service.history.AlertHistoryService;
+import com.sajo.operation_service.service.notification.SlackNotifier;
+import com.sajo.operation_service.service.notification.StructuredAnalysisFormatter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -16,6 +25,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -25,6 +35,9 @@ class AlertAnalysisAsyncProcessorTest {
 
     private static final String THREAD_TS = "1728000000.000100";
     private static final String MESSAGE_TS = "1728000000.000200";
+    private static final StructuredAnalysis ANALYSIS =
+            new StructuredAnalysis(List.of("CPU 사용률 0.92"), List.of(), List.of(), List.of());
+    private static final String ANALYSIS_TEXT = StructuredAnalysisFormatter.format(ANALYSIS, List.of());
 
     private final AlertAnalyzer alertAnalyzer = mock(AlertAnalyzer.class);
     private final SlackNotifier slackNotifier = mock(SlackNotifier.class);
@@ -44,7 +57,7 @@ class AlertAnalysisAsyncProcessorTest {
     }
 
     private AlertAnalysisResult result(String response) {
-        return new AlertAnalysisResult(response, "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
+        return new AlertAnalysisResult(response, ANALYSIS, List.of(), "system", "user", "gpt-test", new TokenUsage(1, 2, 3), 10L);
     }
 
     @Test
@@ -55,7 +68,7 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.analyze(alert, THREAD_TS);
 
-        verify(slackNotifier).replyAnalysis(alert, THREAD_TS, "분석 결과");
+        verify(slackNotifier).replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT);
     }
 
     @Test
@@ -66,7 +79,7 @@ class AlertAnalysisAsyncProcessorTest {
 
         processor.analyze(alert, null);
 
-        verify(slackNotifier).replyAnalysis(alert, null, "분석 결과");
+        verify(slackNotifier).replyAnalysis(alert, null, ANALYSIS_TEXT);
     }
 
     @Test
@@ -109,12 +122,12 @@ class AlertAnalysisAsyncProcessorTest {
         AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
         AlertAnalysisResult result = result("분석 결과");
         when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
-        when(slackNotifier.replyAnalysis(alert, THREAD_TS, "분석 결과")).thenReturn(Optional.of(MESSAGE_TS));
+        when(slackNotifier.replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT)).thenReturn(Optional.of(MESSAGE_TS));
 
         processor.analyze(alert, THREAD_TS);
 
         var inOrder = inOrder(slackNotifier, alertHistoryService);
-        inOrder.verify(slackNotifier).replyAnalysis(alert, THREAD_TS, "분석 결과");
+        inOrder.verify(slackNotifier).replyAnalysis(alert, THREAD_TS, ANALYSIS_TEXT);
         inOrder.verify(alertHistoryService).recordAnalyzed(alert, result, THREAD_TS, MESSAGE_TS);
     }
 
@@ -151,11 +164,33 @@ class AlertAnalysisAsyncProcessorTest {
         AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
         AlertAnalysisResult result = result("분석 결과");
         when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
-        when(slackNotifier.replyAnalysis(alert, null, "분석 결과")).thenReturn(Optional.empty());
+        when(slackNotifier.replyAnalysis(alert, null, ANALYSIS_TEXT)).thenReturn(Optional.empty());
 
         processor.analyze(alert, null);
 
         verify(alertHistoryService).recordAnalyzed(eq(alert), eq(result), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("분석 결과를 Slack 메시지로 조립하다 예외가 나면 분석 없음 안내를 보내고, 받은 분석 결과와 함께 ANALYSIS_FAILED 이력을 남긴다")
+    void analyze_formatThrows_repliesWithoutAnalysisAndRecordsFormatFailedWithResult() {
+        AlertManagerWebhookRequest.Alert alert = createAlert("HighCpuUsage");
+        RuntimeException cause = new RuntimeException("조립 실패");
+        AlertAnalysisResult result = result("분석 결과");
+        when(alertAnalyzer.analyze(alert)).thenReturn(Optional.of(result));
+        when(slackNotifier.replyWithoutAnalysis(alert, null)).thenReturn(Optional.of(MESSAGE_TS));
+
+        try (MockedStatic<StructuredAnalysisFormatter> formatter = mockStatic(StructuredAnalysisFormatter.class)) {
+            formatter.when(() -> StructuredAnalysisFormatter.format(any(), any())).thenThrow(cause);
+
+            processor.analyze(alert, null);
+        }
+
+        verify(slackNotifier, never()).replyAnalysis(any(), any(), any());
+        verify(slackNotifier).replyWithoutAnalysis(alert, null);
+        verify(alertHistoryService).recordFormatFailed(alert, result, cause, null, MESSAGE_TS);
+        verify(alertHistoryService, never()).recordAnalysisFailed(any(), any(), any(), any());
+        verify(alertHistoryService, never()).recordAnalyzed(any(), any(), any(), any());
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.sajo.operation_service.controller;
 
 import com.sajo.operation_service.controller.dto.request.AlertManagerWebhookRequest;
-import com.sajo.operation_service.service.AlertReceiveService;
+import com.sajo.operation_service.service.receive.AlertReceiveService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
