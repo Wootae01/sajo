@@ -65,7 +65,7 @@ class AccountDeleteRaceIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        jdbcTemplate.update("DELETE FROM p_accounts WHERE user_id = ?", userId);
+        jdbcTemplate.update("DELETE FROM user_account.p_accounts WHERE user_id = ?", userId);
     }
 
     @Test
