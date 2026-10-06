@@ -95,13 +95,14 @@ public class AlertAnalyzer {
         Map<String, PrometheusQueryResult> hostAndDependencyMetrics = new LinkedHashMap<>();
         hostAndDependencyMetrics.putAll(hostDiagnosticsService.collect(time));
 
-        // 3. 의존관계 스냅샷 - 참고 정보, 항상 time(발생 시각) 기준
+        // 3. 의존관계 스냅샷 - 참고 정보, 항상 time(발생 시각) 기준.
+        // 의존 대상 목록은 한 번만 구해서 지표 수집과 원인 후보에 같이 쓴다(후보와 지표가 어긋나지 않게)
+        List<String> relatedTargets = target == null ? List.of() : dependencyMappingService.relatedTargets(target);
         if (target != null) {
-            hostAndDependencyMetrics.putAll(dependencyMappingService.collect(target, time));
+            hostAndDependencyMetrics.putAll(dependencyMappingService.collect(relatedTargets, time));
         }
 
-        List<String> candidates = AnalysisCandidates.of(
-                target, target == null ? List.of() : dependencyMappingService.relatedTargets(target));
+        List<String> candidates = AnalysisCandidates.of(target, relatedTargets);
 
         String userPrompt = AlertPromptBuilder.userPrompt(alert, diagnosis, hostAndDependencyMetrics, candidates);
         log.debug("LLM에 보낼 프롬프트. alertname={}\n{}", alertname, userPrompt);

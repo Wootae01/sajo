@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -61,6 +62,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AlertAnalyzerTest {
+
+    private static final List<String> TRADING_DEPENDENCIES = List.of("postgres", "mongo", "kafka");
 
     private static final String VALID_JSON = """
             {
@@ -145,7 +148,7 @@ class AlertAnalyzerTest {
                 "alertname", "HighCpuUsage", "application", "trading-service"
         ));
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
-        when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
+        when(dependencyMappingService.collect(anyList(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
         return alert;
     }
@@ -282,7 +285,8 @@ class AlertAnalyzerTest {
                 "query", List.of(new PrometheusQueryResult.Series(Map.of(), "0.92")));
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(dependencyMappingService.collect("trading-service", alert.startsAt()))
+        when(dependencyMappingService.relatedTargets("trading-service")).thenReturn(TRADING_DEPENDENCIES);
+        when(dependencyMappingService.collect(TRADING_DEPENDENCIES, alert.startsAt()))
                 .thenReturn(Map.of("[의존 대상: postgres] Postgres 커넥션 사용률(0~1)", dummy));
         when(appMetricsStrategy.diagnose(alert, alert.startsAt()))
                 .thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of("CPU 사용률(0~1)", dummy)));
@@ -293,7 +297,10 @@ class AlertAnalyzerTest {
 
         assertThat(result).map(AlertAnalysisResult::response).contains(VALID_JSON);
         verify(hostDiagnosticsService).collect(alert.startsAt());
-        verify(dependencyMappingService).collect("trading-service", alert.startsAt());
+        verify(dependencyMappingService).collect(TRADING_DEPENDENCIES, alert.startsAt());
+        // 지표를 모은 의존 대상과 같은 목록이 원인 후보에도 들어간다
+        assertThat(result.get().userPrompt()).contains(
+                "[Cause candidates]\ntrading-service, postgres, mongo, kafka, market-service, user-service, external-api, host");
         verify(appMetricsStrategy).diagnose(alert, alert.startsAt());
     }
 
@@ -323,7 +330,7 @@ class AlertAnalyzerTest {
         PrometheusQueryResult dummy = PrometheusQueryResult.success("query", List.of());
 
         when(hostDiagnosticsService.collect(alert.startsAt())).thenReturn(Map.of("호스트 CPU 사용률(0~1)", dummy));
-        when(dependencyMappingService.collect("node", alert.startsAt())).thenReturn(Map.of());
+        when(dependencyMappingService.collect(List.of(), alert.startsAt())).thenReturn(Map.of());
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenReturn(chatResponse(VALID_JSON));
 
@@ -429,7 +436,7 @@ class AlertAnalyzerTest {
         ));
 
         when(hostDiagnosticsService.collect(any(Instant.class))).thenReturn(Map.of());
-        when(dependencyMappingService.collect(anyString(), any(Instant.class))).thenReturn(Map.of());
+        when(dependencyMappingService.collect(anyList(), any(Instant.class))).thenReturn(Map.of());
         when(appMetricsStrategy.diagnose(any(), any())).thenReturn(new StrategyDiagnosis(alert.startsAt(), Map.of()));
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().chatResponse())
                 .thenThrow(new RuntimeException("OpenAI API error"));

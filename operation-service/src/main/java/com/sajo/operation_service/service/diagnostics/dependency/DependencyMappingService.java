@@ -43,14 +43,16 @@ public class DependencyMappingService {
     private final MongoDiagnosticsService mongoDiagnosticsService;
     private final KafkaDiagnosticsService kafkaDiagnosticsService;
 
-    // 매핑에 없는 대상(예: node)이면 빈 목록 - LLM 원인 후보 목록(AnalysisCandidates)도 같은 표를 쓴다
+    // 매핑에 없는 대상(예: node)이면 빈 목록
     public List<String> relatedTargets(String target) {
         return DEPENDENCY_MAP.getOrDefault(target, List.of());
     }
 
-    public Map<String, PrometheusQueryResult> collect(String target, Instant time) {
+    // 대상 이름이 아니라 relatedTargets() 결과를 받는다 - 호출하는 쪽(AlertAnalyzer)이 같은 목록을 LLM 원인 후보(AnalysisCandidates)에도
+    // 넘겨서, "판정하라고 준 의존 대상"과 "지표를 모은 의존 대상"이 항상 같게 하기 위함
+    public Map<String, PrometheusQueryResult> collect(List<String> relatedTargets, Instant time) {
         Map<String, PrometheusQueryResult> metrics = new LinkedHashMap<>();
-        for (String relatedTarget : relatedTargets(target)) {
+        for (String relatedTarget : relatedTargets) {
             collectFor(relatedTarget, time)
                     .forEach((label, result) -> metrics.put("[의존 대상: " + relatedTarget + "] " + label, result));
         }
