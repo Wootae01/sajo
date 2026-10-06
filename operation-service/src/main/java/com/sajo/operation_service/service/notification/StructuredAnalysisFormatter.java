@@ -43,7 +43,8 @@ public final class StructuredAnalysisFormatter {
     }
 
     // 필드가 빠진 응답(null 목록/null 원소)도 빈 것으로 보고 그린다 - Slack 발송이 NPE로 깨지지 않게 하기 위함
-    public static String format(StructuredAnalysis analysis) {
+    // validationErrors(판정 규칙 위반)가 있으면 맨 아래에 경고 한 줄을 붙인다 - 후보 누락처럼 본문만 봐서는
+    public static String format(StructuredAnalysis analysis, List<String> validationErrors) {
         if (analysis == null) {
             return "_분석 결과 없음_";
         }
@@ -67,6 +68,7 @@ public final class StructuredAnalysisFormatter {
         }
 
         bulletSection("다음 확인", orEmpty(analysis.nextChecks()), MAX_NEXT_CHECKS).ifPresent(sections::add);
+        validationWarning(orEmpty(validationErrors)).ifPresent(sections::add);
         return String.join("\n\n", sections);
     }
 
@@ -138,6 +140,17 @@ public final class StructuredAnalysisFormatter {
         return Optional.of("*" + title + "*\n" + nonBlank.stream()
                 .map(item -> "• " + escape(item))
                 .collect(Collectors.joining("\n")));
+    }
+
+    // 위반 문구는 검증기가 사람이 읽을 수 있게 만든 문장이라 그대로 보여준다
+    private static Optional<String> validationWarning(List<String> validationErrors) {
+        List<String> errors = validationErrors.stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (errors.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("⚠ 분석 검증 위반: " + escape(String.join(" / ", errors)));
     }
 
     private static Optional<String> namesLine(String title, List<CandidateVerdict> candidates, Verdict verdict) {

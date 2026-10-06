@@ -42,7 +42,7 @@ class StructuredAnalysisFormatterTest {
                 List.of("장기 실행 트랜잭션 확인")
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).isEqualTo("""
                 *유력 원인*
                 1. postgres / CONNECTION_EXHAUSTED (유력)
                     커넥션 대기 12
@@ -69,7 +69,7 @@ class StructuredAnalysisFormatterTest {
                 List.of("확인1", "확인2", "확인3", "확인4", "확인5")
         );
 
-        String text = StructuredAnalysisFormatter.format(analysis);
+        String text = StructuredAnalysisFormatter.format(analysis, List.of());
 
         assertThat(text).contains("근거: a 1 · b 2 · c 3").doesNotContain("d 4");
         assertThat(text).contains("• 확인4").doesNotContain("확인5");
@@ -102,7 +102,7 @@ class StructuredAnalysisFormatterTest {
                 List.of()
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).isEqualTo("""
                 *유력 원인*
                 _유력 원인 없음_
 
@@ -114,8 +114,40 @@ class StructuredAnalysisFormatterTest {
     void format_nullFields() {
         StructuredAnalysis analysis = new StructuredAnalysis(null, null, null, null);
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("*유력 원인*\n_유력 원인 없음_");
-        assertThat(StructuredAnalysisFormatter.format(null)).isEqualTo("_분석 결과 없음_");
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).isEqualTo("*유력 원인*\n_유력 원인 없음_");
+        assertThat(StructuredAnalysisFormatter.format(null, List.of())).isEqualTo("_분석 결과 없음_");
+    }
+
+    @Test
+    @DisplayName("판정 규칙 위반이 있으면 맨 아래에 경고 한 줄을 붙인다 - 후보 누락처럼 본문에 안 드러나는 위반을 정상 분석으로 오해하지 않게")
+    void format_withValidationErrors_appendsWarningAtBottom() {
+        StructuredAnalysis analysis = new StructuredAnalysis(
+                List.of(),
+                List.of(candidate("redis", Verdict.RULED_OUT, CauseCategory.UNKNOWN)),
+                List.of(),
+                List.of("확인1")
+        );
+
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of("후보 누락: host", "중복 판정: redis")))
+                .isEqualTo("""
+                        *유력 원인*
+                        _유력 원인 없음_
+
+                        *배제*: redis
+
+                        *다음 확인*
+                        • 확인1
+
+                        ⚠ 분석 검증 위반: 후보 누락: host / 중복 판정: redis""");
+    }
+
+    @Test
+    @DisplayName("위반이 없으면(빈 목록/null) 경고를 붙이지 않는다")
+    void format_withoutValidationErrors_noWarning() {
+        StructuredAnalysis analysis = new StructuredAnalysis(List.of(), List.of(), List.of(), List.of());
+
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).doesNotContain("⚠");
+        assertThat(StructuredAnalysisFormatter.format(analysis, null)).doesNotContain("⚠");
     }
 
     @Test
@@ -128,7 +160,7 @@ class StructuredAnalysisFormatterTest {
                 List.of("p99 < 1s & 에러율 > 5% 확인")
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).contains("• p99 &lt; 1s &amp; 에러율 &gt; 5% 확인");
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).contains("• p99 &lt; 1s &amp; 에러율 &gt; 5% 확인");
     }
 
     @Test
@@ -145,7 +177,7 @@ class StructuredAnalysisFormatterTest {
                 List.of()
         );
 
-        assertThat(StructuredAnalysisFormatter.format(analysis)).isEqualTo("""
+        assertThat(StructuredAnalysisFormatter.format(analysis, List.of())).isEqualTo("""
                 *유력 원인*
                 1. postgres / LOCK (유력)
                     락 대기 3

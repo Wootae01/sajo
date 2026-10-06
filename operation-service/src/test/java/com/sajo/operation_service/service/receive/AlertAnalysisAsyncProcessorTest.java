@@ -37,7 +37,7 @@ class AlertAnalysisAsyncProcessorTest {
     private static final String MESSAGE_TS = "1728000000.000200";
     private static final StructuredAnalysis ANALYSIS =
             new StructuredAnalysis(List.of("CPU 사용률 0.92"), List.of(), List.of(), List.of());
-    private static final String ANALYSIS_TEXT = StructuredAnalysisFormatter.format(ANALYSIS);
+    private static final String ANALYSIS_TEXT = StructuredAnalysisFormatter.format(ANALYSIS, List.of());
 
     private final AlertAnalyzer alertAnalyzer = mock(AlertAnalyzer.class);
     private final SlackNotifier slackNotifier = mock(SlackNotifier.class);
@@ -180,7 +180,7 @@ class AlertAnalysisAsyncProcessorTest {
         when(slackNotifier.replyWithoutAnalysis(alert, null)).thenReturn(Optional.of(MESSAGE_TS));
 
         try (MockedStatic<StructuredAnalysisFormatter> formatter = mockStatic(StructuredAnalysisFormatter.class)) {
-            formatter.when(() -> StructuredAnalysisFormatter.format(any())).thenThrow(cause);
+            formatter.when(() -> StructuredAnalysisFormatter.format(any(), any())).thenThrow(cause);
 
             processor.analyze(alert, null);
         }

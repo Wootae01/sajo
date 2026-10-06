@@ -62,7 +62,7 @@ public class AlertAnalysisAsyncProcessor {
             // (원문은 바로 위 info 로그에 있다)
             String analysisText;
             try {
-                analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis());
+                analysisText = StructuredAnalysisFormatter.format(result.structuredAnalysis(), result.validationErrors());
             } catch (Exception e) {
                 log.error("분석 결과 Slack 메시지 조립 실패. alertname={}, application={}",
                         alert.labels().get("alertname"), alert.labels().get("application"), e);
