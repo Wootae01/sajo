@@ -47,3 +47,5 @@ out/
 
 # macOS
 .DS_Store
+
+.handoffs/
