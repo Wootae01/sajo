@@ -33,11 +33,16 @@ public class AccountQueryService {
         }
     }
 
-    //계좌 삭제 진행 중(PENDING_DELETION)이면 존재하지 않는 계좌와 동일하게 취급해 거부한다.
+    // 외부 응답은 여전히 계좌 없음/삭제 중을 구분하지 않지만(레이스 윈도우 비노출),
+    // 내부적으로는 별도 에러코드를 둬서 로그·장애 원인 분석 시 구분할 수 있게 한다.
     @Transactional(readOnly = true)
     public Account getAccountByUserId(UUID userId) {
         Account account = accountQueryRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(AccountErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (account.getStatus() == AccountStatus.PENDING_DELETION) {
+            throw new BusinessException(AccountErrorCode.ACCOUNT_PENDING_DELETION);
+        }
 
         if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new BusinessException(AccountErrorCode.ACCOUNT_NOT_FOUND);

@@ -124,7 +124,7 @@ class AccountQueryServiceTest {
     }
 
     @Test
-    @DisplayName("계좌가 삭제 진행 중(PENDING_DELETION)이면 존재하지 않는 계좌와 동일하게 ACCOUNT_NOT_FOUND 예외를 던진다")
+    @DisplayName("계좌가 삭제 진행 중(PENDING_DELETION)이면 ACCOUNT_PENDING_DELETION 예외를 던진다")
     void getAccountByUserIdFailsWhenPendingDeletion() {
         // given
         UUID userId = UUID.randomUUID();
@@ -139,7 +139,7 @@ class AccountQueryServiceTest {
                 .satisfies(exception -> {
                     BusinessException businessException = (BusinessException) exception;
                     assertThat(businessException.getErrorCode())
-                            .isEqualTo(AccountErrorCode.ACCOUNT_NOT_FOUND);
+                            .isEqualTo(AccountErrorCode.ACCOUNT_PENDING_DELETION);
                 });
     }
 

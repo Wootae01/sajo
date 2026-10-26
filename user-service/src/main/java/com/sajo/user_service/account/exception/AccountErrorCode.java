@@ -37,7 +37,9 @@ public enum AccountErrorCode implements ErrorCode {
 
     ACCOUNT_HOLDING_NOT_FOUND(HttpStatus.NOT_FOUND, "ACCOUNT_0015", "해당 종목을 보유하고 있지 않습니다"),
 
-    INVALID_ACCOUNT_NO(HttpStatus.BAD_REQUEST, "ACCOUNT_0016", "KIS에 등록되지 않은 계좌번호입니다");
+    INVALID_ACCOUNT_NO(HttpStatus.BAD_REQUEST, "ACCOUNT_0016", "KIS에 등록되지 않은 계좌번호입니다"),
+
+    ACCOUNT_PENDING_DELETION(HttpStatus.CONFLICT, "ACCOUNT_0017", "계좌가 삭제 처리 중입니다");
 
     private final HttpStatus status;
     private final String errorCode;
